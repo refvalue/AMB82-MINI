@@ -1,0 +1,126 @@
+#include "Resources.hpp"
+
+constexpr char systemInfoHtml[] = R"AAAAA(<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Information</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="loading" class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container">
+        <h1>System Information</h1>
+
+        <button id='get-system-info-btn' onclick="fetchSystemInfo()">Get System Info</button>
+        <button onclick="updateDeviceTime()">Update Device Time</button>
+        <button onclick="window.location.href='/schedule.html'">Manage Schedule</button>
+        <button onclick="window.location.href='/live-streaming.html'">Live Streaming</button>
+
+        <div class="system-info">
+            <h2>Device Time</h2>
+            <p id="device-time"></p>
+        </div>
+
+        <div class="system-info">
+            <h2>Wi-Fi Hotspot</h2>
+            <p id="wifi-hotspot"></p>
+        </div>
+
+        <div class="system-info">
+            <h2>SD Card Usage</h2>
+            <div id="sd-card-usage" class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar">%</div>
+            </div>
+            <p id="sd-card-info"></p>
+        </div>
+    </div>
+
+    <script>
+        async function fetchSystemInfo() {
+            showLoading();
+
+            try {
+                const response = await fetch('/api/v1/systemInfo');
+
+                if (!response.ok) {
+                    throw new Error(response.statusText);
+                }
+
+                const data = await response.json();
+
+                if (data.success !== true) {
+                    throw new Error(data.message);
+                }
+
+                const deviceTime = new Date((data.data.timestamp + new Date().getTimezoneOffset() * 60) * 1000);
+                const freeSpace = data.data.sdcard.freeSpace / 1024 / 1024;
+                const usedSpace = data.data.sdcard.usedSpace / 1024 / 1024;
+                const totalSpace = freeSpace + usedSpace;
+                const usagePercentage = Math.round((usedSpace / totalSpace) * 100);
+
+                document.getElementById('device-time').textContent = deviceTime.toLocaleString();
+                document.getElementById('wifi-hotspot').innerHTML = `SSID: ${data.data.hotspot.ssid}<br>Password: ${data.data.hotspot.password}`;
+                document.getElementById('progress-bar').style.width = usagePercentage + '%';
+                document.getElementById('progress-bar').textContent = usagePercentage + '%';
+                document.getElementById('sd-card-info').textContent = `Used: ${usedSpace} MB / Total: ${totalSpace} MB (Remaining: ${freeSpace} MB)`;
+            } catch (e) {
+                alert(`Error fetching system info: ${e}`);
+            }
+            finally {
+                hideLoading();
+            }
+        }
+
+        async function updateDeviceTime() {
+            showLoading();
+
+            try {
+                const timestamp = Math.floor((Date.now() / 1000 - new Date().getTimezoneOffset() * 60));
+                const response = await fetch('/api/v1/updateTime', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ timestamp: timestamp }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(response.statusText);
+                }
+
+                const data = await response.json();
+
+                if (data.success !== true) {
+                    throw new Error(data.message);
+                }
+
+                alert('Device time successfully updated.');
+
+            } catch (e) {
+                alert(`Error fetching system info: ${e}`);
+            }
+            finally {
+                hideLoading();
+            }
+
+            document.getElementById('get-system-info-btn').click();
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+    </script>
+</body>
+
+</html>)AAAAA";
