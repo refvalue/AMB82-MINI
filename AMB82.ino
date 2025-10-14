@@ -1,17 +1,23 @@
 #include "AppConfig.hpp"
+#include "DateTime.hpp"
 #include "HttpServer.hpp"
+#include "LoRaHC15Service.hpp"
+#include "LoRaService.hpp"
 #include "MixingStreamer.hpp"
 #include "RecordingStateMachine.hpp"
 #include "Resources.hpp"
+#include "TimeUtil.hpp"
 #include "TrackedValue.hpp"
 #include "WiFiHotspot.hpp"
+
+#include <cstdint>
+#include <ctime>
+#include <tuple>
 
 #include <AmebaFatFS.h>
 #include <VideoStream.h>
 #include <VideoStreamOverlay.h>
-#include <rtc.h>
-#include <stdint.h>
-#include <time.h>
+#include <Wire.h>
 
 extern HttpService& systemInfoService;
 extern HttpService& currentScheduleService;
@@ -35,7 +41,32 @@ namespace {
     HttpServer liveStreamingServer{8080};
 
     void initRTC() {
-        rtc.Init();
+        Wire.begin();
+    }
+
+    uint8_t bcdToDec(uint8_t val) {
+        return ((val / 16 * 10) + (val % 16));
+    }
+
+    DateTime getRtcTime() {
+        Wire.beginTransmission(0x68);
+        Wire.write(0x00);
+        Wire.endTransmission();
+
+        Wire.requestFrom(0x68, 7);
+
+        const auto second    = bcdToDec(Wire.read() & 0x7F);
+        const auto minute    = bcdToDec(Wire.read());
+        const auto hour      = bcdToDec(Wire.read());
+        const auto dayOfWeek = bcdToDec(Wire.read());
+        const auto day       = bcdToDec(Wire.read());
+        const auto month     = bcdToDec(Wire.read());
+        const auto year      = static_cast<uint16_t>(bcdToDec(Wire.read()) + 2000);
+
+        Serial.print("SECOND ");
+        Serial.println((int) second);
+
+        return {year, month, day, hour, minute, second};
     }
 
     void initMultimedia() {
@@ -63,6 +94,7 @@ namespace {
         xSemaphoreTake(globalAppMutex, portMAX_DELAY);
         if (appConfig.updated) {
             appConfig.confirm();
+            appConfig.value.save(appConfigFileName);
             recordingStateMachine.update(appConfig.value.recording.schedule);
         }
 
@@ -121,23 +153,25 @@ void setup() {
 
 void loop() {
     static int32_t counter;
-    static time_t timestamp;
+    static time_t unixTimestamp;
+    static DateTime dateTime;
 
     xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-    timestamp = rtc.Read();
+    dateTime      = getRtcTime();
+    unixTimestamp = TimeUtil::toUnixTimestamp(dateTime);
     xSemaphoreGive(globalAppMutex);
 
-    const auto dateTime = ctime(&timestamp);
+    const auto dateTimeText = ctime(&unixTimestamp);
 
     OSD.createBitmap(videoChannel);
-    OSD.drawText(videoChannel, 36, 36, dateTime, 0xFFFFFFFF);
+    OSD.drawText(videoChannel, 36, 36, dateTimeText, 0xFFFFFFFF);
     OSD.update(videoChannel);
 
-    driveRecording(timestamp, dateTime);
+    driveRecording(unixTimestamp, dateTimeText);
 
     if (++counter % 10 == 0) {
         WiFiHotspot.dump();
-        Serial.println(dateTime);
+        Serial.println(dateTimeText);
     }
 
     vTaskDelay(500 / portTICK_PERIOD_MS);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ManagedTask.hpp"
+
 #include <DictionaryDeclarations.h>
 #include <WString.h>
 #include <WiFi.h>
@@ -17,10 +19,10 @@ public:
     void stop();
 
 private:
-    static void acceptRoutine(void* param);
+    static void acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped, void* param);
 
     Dictionary services_;
     HttpService* fallbackService_;
     WiFiServer impl_;
-    TaskHandle_t task_;
+    ManagedTask task_;
 };

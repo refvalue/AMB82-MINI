@@ -1,3 +1,4 @@
+#include "DS3234.hpp"
 #include "HttpMessageServer.hpp"
 #include "HttpService.hpp"
 #include "HttpServiceUtil.hpp"
@@ -6,10 +7,12 @@
 
 #include <Client.h>
 #include <WString.h>
-#include <rtc.h>
 #include <task.h>
+#include <time.h>
 
 namespace {
+    constexpr time_t y2k_timestamp = 946684800;
+
     struct UpdateTimeService : HttpService {
         void run(const String& methodPath, HttpMessage& message, Client& client) override {
             const auto params = message.getBodyAsJson();
@@ -23,7 +26,8 @@ namespace {
                 const auto timestamp = cJSON_GetNumberValue(item);
 
                 xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-                rtc.Write(timestamp);
+                getDS3234().setDateTime(
+                    RtcDateTime{static_cast<uint32_t>(static_cast<time_t>(timestamp) - y2k_timestamp)});
                 xSemaphoreGive(globalAppMutex);
 
                 return HttpServiceUtil::sendResponseBody(response, true, 0, "RTC time successfully synchornized.");

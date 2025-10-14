@@ -1,8 +1,10 @@
 #include "MixingStreamer.hpp"
+
 #include "Resources.hpp"
 
+#include <cstdio>
+
 #include <AmebaFatFS.h>
-#include <stdio.h>
 
 namespace {
     constexpr uint32_t defaultSingleFileDuration = 60 * 30;

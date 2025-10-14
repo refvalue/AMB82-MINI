@@ -1,10 +1,11 @@
 #pragma once
 
 #if 1
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
+
 #include <WString.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <time.h>
 #endif
 
 #if 1

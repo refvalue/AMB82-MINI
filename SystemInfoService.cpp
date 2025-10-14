@@ -1,4 +1,5 @@
 #include "AppConfig.hpp"
+#include "DS3234.hpp"
 #include "HttpMessageServer.hpp"
 #include "HttpService.hpp"
 #include "HttpServiceUtil.hpp"
@@ -9,7 +10,6 @@
 #include <Client.h>
 #include <WString.h>
 #include <WiFi.h>
-#include <rtc.h>
 
 namespace {
     struct SystemInfoService : HttpService {
@@ -23,7 +23,7 @@ namespace {
             cJSON_AddNumberToObject(sdcard, "usedSpace", static_cast<double>(SDFs.get_used_space()));
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            cJSON_AddNumberToObject(data.get(), "timestamp", rtc.Read());
+            cJSON_AddNumberToObject(data.get(), "timestamp", getDS3234().getDateTime().Unix64Time());
             cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.value.getHotspotJson().detach());
             xSemaphoreGive(globalAppMutex);
 

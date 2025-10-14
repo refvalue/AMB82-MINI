@@ -3,6 +3,13 @@
 #include "HttpServer.hpp"
 #include "HttpService.hpp"
 
+#if 1
+#include <FreeRTOS.h>
+#endif
+
+#include <portmacro.h>
+#include <semphr.h>
+
 namespace {
     constexpr char httpHeaderTail[] = " HTTP/1.1";
 
@@ -42,9 +49,11 @@ namespace {
     }
 } // namespace
 
-HttpServer::HttpServer(uint16_t port) : fallbackService_{}, impl_{port}, task_{} {}
+HttpServer::HttpServer(uint16_t port) : fallbackService_{}, impl_{port} {}
 
-HttpServer::~HttpServer() = default;
+HttpServer::~HttpServer() {
+    stop();
+}
 
 void HttpServer::addService(const String& methodPath, HttpService* service) {
     services_(methodPath, reinterpret_cast<int32_t>(service));
@@ -55,26 +64,21 @@ void HttpServer::setFallbackService(HttpService* service) {
 }
 
 void HttpServer::start() {
+    stop();
     impl_.begin();
-    xTaskCreate(&HttpServer::acceptRoutine, ("HttpServer" + String{reinterpret_cast<uint32_t>(this)}).c_str(), 4096,
-        this, 1, &task_);
+    task_ = {&HttpServer::acceptRoutine, this};
     Serial.print("Task Created: ");
-    Serial.println(String{reinterpret_cast<uint32_t>(task_)});
+    Serial.println(String{reinterpret_cast<uint32_t>(task_.handle())});
 }
 
 void HttpServer::stop() {
-    if (task_) {
-        vTaskDelete(task_);
-        task_ = nullptr;
-    }
-
     impl_.stop();
 }
 
-void HttpServer::acceptRoutine(void* param) {
+void HttpServer::acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped, void* param) {
     auto&& self = *static_cast<HttpServer*>(param);
 
-    for (;;) {
+    while (!checkStopped()) {
         auto client = self.impl_.available();
 
         if (!client) {
@@ -91,7 +95,7 @@ void HttpServer::acceptRoutine(void* param) {
 
         while (client.connected()) {
             if (client.available()) {
-                char c = client.read();
+                const char c = client.read();
 
                 if (c == '\r') {
                     // Extracts the method and path, e.g. `GET /api/test`.

@@ -19,6 +19,7 @@ void RecordingStateMachine::update(SafeList<AppConfig::RecordingPlan>& schedule)
         if (const auto key = stateMapping_.key(i); !itemMapping_(key)) {
             stateMapping_.remove(key.c_str());
         }
+        
     }
 
     for (size_t i = 0; i < itemMapping_.size(); i++) {
