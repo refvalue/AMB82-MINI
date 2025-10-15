@@ -1,20 +1,25 @@
 #include "AppConfig.hpp"
-#include "DS3234.hpp"
-#include "HttpMessageServer.hpp"
-#include "HttpService.hpp"
-#include "HttpServiceUtil.hpp"
+#include "BleService.hpp"
+#include "DS3231.hpp"
+#include "MessageUtil.hpp"
 #include "Resources.hpp"
+#include "TimeUtil.hpp"
 #include "cJSON.hpp"
 
+#include <cstdint>
+
 #include <AmebaFatFS.h>
-#include <Client.h>
-#include <WString.h>
 #include <WiFi.h>
 
+#if 1
+#include <FreeRTOS.h>
+#endif
+
+#include <semphr.h>
+
 namespace {
-    struct SystemInfoService : HttpService {
-        void run(const String& methodPath, HttpMessage& message, Client& client) override {
-            HttpMessageServer response{client};
+    struct SystemInfoService : BleService {
+        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
             cJSONPtr data{cJSON_CreateObject()};
 
             const auto sdcard = cJSON_AddObjectToObject(data.get(), "sdcard");
@@ -23,16 +28,16 @@ namespace {
             cJSON_AddNumberToObject(sdcard, "usedSpace", static_cast<double>(SDFs.get_used_space()));
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            cJSON_AddNumberToObject(data.get(), "timestamp", getDS3234().getDateTime().Unix64Time());
+            cJSON_AddNumberToObject(data.get(), "timestamp", TimeUtil::toUnixTimestamp(globalRtc.getDateTime()));
             cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.value.getHotspotJson().detach());
             xSemaphoreGive(globalAppMutex);
 
-            HttpServiceUtil::sendResponseBody(response, true, 0, "Success", data.get());
+            MessageUtil::sendResponseBody(transport, true, 0, "Success", data.get());
         }
     };
 } // namespace
 
-auto&& systemInfoService = []() -> HttpService& {
+auto&& systemInfoService = []() -> BleService& {
     static SystemInfoService service;
 
     return service;

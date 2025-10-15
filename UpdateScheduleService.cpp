@@ -1,29 +1,27 @@
 #include "AppConfig.hpp"
-#include "HttpMessageServer.hpp"
-#include "HttpService.hpp"
-#include "HttpServiceUtil.hpp"
+#include "BleService.hpp"
+#include "MessageUtil.hpp"
 #include "Resources.hpp"
 #include "SafeList.hpp"
 #include "cJSON.hpp"
 
+#include <cstdint>
 #include <utility>
 
-#include <Client.h>
-#include <WString.h>
-#include <stdint.h>
+#if 1
+#include <FreeRTOS.h>
+#endif
+
+#include <semphr.h>
 
 namespace {
-    struct UpdateScheduleService : HttpService {
-        void run(const String& methodPath, HttpMessage& message, Client& client) override {
-            const auto params = message.getBodyAsJson();
-            HttpMessageServer response{client};
-
-            if (cJSON_IsNull(params.get()) || cJSON_IsInvalid(params.get())) {
-                return HttpServiceUtil::sendResponseBody(response, "failure", -1, "Invalid request body.");
+    struct UpdateScheduleService : BleService {
+        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
+            if (cJSON_IsNull(message) || cJSON_IsInvalid(message)) {
+                return MessageUtil::sendResponseBody(transport, "failure", -1, "Invalid request body.");
             }
 
-            if (const auto schedule = cJSON_GetObjectItem(params.get(), "schedule");
-                schedule && cJSON_IsArray(schedule)) {
+            if (const auto schedule = cJSON_GetObjectItem(message, "schedule"); schedule && cJSON_IsArray(schedule)) {
                 SafeList<AppConfig::RecordingPlan> scheduleList;
                 cJSON* startTimestamp{};
                 cJSON* duration{};
@@ -33,7 +31,7 @@ namespace {
                         || (startTimestamp = cJSON_GetObjectItem(item, "startTimestamp")) == nullptr
                         || (duration = cJSON_GetObjectItem(item, "duration")) == nullptr
                         || !cJSON_IsNumber(startTimestamp) || !cJSON_IsNumber(duration)) {
-                        return HttpServiceUtil::sendResponseBody(response, false, -2, "Invalid schedule item.");
+                        return MessageUtil::sendResponseBody(transport, false, -2, "Invalid schedule item.");
                     }
 
                     scheduleList.add(AppConfig::RecordingPlan{
@@ -47,15 +45,15 @@ namespace {
                 globalAppConfig.markUpdated();
                 xSemaphoreGive(globalAppMutex);
 
-                return HttpServiceUtil::sendResponseBody(response, true, 0, "Recording schedule successfully updated.");
+                return MessageUtil::sendResponseBody(transport, true, 0, "Recording schedule successfully updated.");
             }
 
-            HttpServiceUtil::sendResponseBody(response, false, -3, "Missing array parameter: `schedule`.");
+            MessageUtil::sendResponseBody(transport, false, -3, "Missing array parameter: `schedule`.");
         }
     };
 } // namespace
 
-auto&& updateScheduleService = []() -> HttpService& {
+auto&& updateScheduleService = []() -> BleService& {
     static UpdateScheduleService service;
 
     return service;

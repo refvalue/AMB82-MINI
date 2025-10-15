@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
+#include <cstddef>
+#include <cstdint>
 
 namespace Btp {
     enum class PacketType : uint8_t {

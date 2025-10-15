@@ -1,8 +1,13 @@
+#undef min
+#undef max
+#undef true
+#undef false
+
 #include "AppConfig.hpp"
+#include "BleServer.hpp"
+#include "DS3231.hpp"
 #include "DateTime.hpp"
 #include "HttpServer.hpp"
-#include "LoRaHC15Service.hpp"
-#include "LoRaService.hpp"
 #include "MixingStreamer.hpp"
 #include "RecordingStateMachine.hpp"
 #include "Resources.hpp"
@@ -19,10 +24,11 @@
 #include <VideoStreamOverlay.h>
 #include <Wire.h>
 
-extern HttpService& systemInfoService;
-extern HttpService& currentScheduleService;
-extern HttpService& updateTimeService;
-extern HttpService& updateScheduleService;
+extern BleService& systemInfoService;
+extern BleService& currentScheduleService;
+extern BleService& updateTimeService;
+extern BleService& updateScheduleService;
+
 extern HttpService& fallbackService;
 extern HttpService& videoStreamingService;
 
@@ -33,6 +39,7 @@ namespace {
 
     TrackedValue<AppConfig> appConfig{AppConfig::createDefault()};
 
+    DS3231 rtc{Wire};
     VideoSetting videoSetting{videoChannel};
     MixingStreamer streamer;
     RecordingStateMachine recordingStateMachine;
@@ -40,34 +47,8 @@ namespace {
     HttpServer webServer{80};
     HttpServer liveStreamingServer{8080};
 
-    void initRTC() {
-        Wire.begin();
-    }
-
-    uint8_t bcdToDec(uint8_t val) {
-        return ((val / 16 * 10) + (val % 16));
-    }
-
-    DateTime getRtcTime() {
-        Wire.beginTransmission(0x68);
-        Wire.write(0x00);
-        Wire.endTransmission();
-
-        Wire.requestFrom(0x68, 7);
-
-        const auto second    = bcdToDec(Wire.read() & 0x7F);
-        const auto minute    = bcdToDec(Wire.read());
-        const auto hour      = bcdToDec(Wire.read());
-        const auto dayOfWeek = bcdToDec(Wire.read());
-        const auto day       = bcdToDec(Wire.read());
-        const auto month     = bcdToDec(Wire.read());
-        const auto year      = static_cast<uint16_t>(bcdToDec(Wire.read()) + 2000);
-
-        Serial.print("SECOND ");
-        Serial.println((int) second);
-
-        return {year, month, day, hour, minute, second};
-    }
+    BleServer bleServer{"NinoCam Smart Box", "4fafc201-1fb5-459e-8fcc-c5c9c331914b",
+        "beb5483e-36e1-4688-b7f5-ea07361b26a8", "d506d318-2fbc-4d2c-8a67-f14b7313f3df"};
 
     void initMultimedia() {
         Camera.configVideoChannel(videoChannel, videoSetting);
@@ -122,6 +103,7 @@ namespace {
 } // namespace
 
 QueueHandle_t globalAppMutex;
+DS3231& globalRtc                        = rtc;
 TrackedValue<AppConfig>& globalAppConfig = appConfig;
 
 void setup() {
@@ -131,21 +113,27 @@ void setup() {
         // Waits for serial port to connect. Needed for native USB port only。
     }
 
-    initRTC();
+    rtc.begin();
     loadAppConfig();
     initMultimedia();
 
+    if (rtc.alarm1Triggered()) {
+        rtc.clearAlarm1Flag();
+    }
+
     WiFiHotspot.start(appConfig.value.hotspot.ssid, appConfig.value.hotspot.password, 1);
 
-    webServer.addService("GET /api/v1/systemInfo", &systemInfoService);
-    webServer.addService("GET /api/v1/currentSchedule", &currentScheduleService);
-    webServer.addService("POST /api/v1/updateTime", &updateTimeService);
-    webServer.addService("POST /api/v1/updateSchedule", &updateScheduleService);
     webServer.setFallbackService(&fallbackService);
     webServer.start();
 
     liveStreamingServer.addService("GET /live", &videoStreamingService);
     liveStreamingServer.start();
+
+    bleServer.addService(RequestType::getSystemInfo, &systemInfoService);
+    bleServer.addService(RequestType::getRecordingSchedule, &currentScheduleService);
+    bleServer.addService(RequestType::setSystemTime, &updateTimeService);
+    bleServer.addService(RequestType::setRecordingSchedule, &updateScheduleService);
+    bleServer.start();
 
     // Starts feeding multimedia data.
     Camera.channelBegin(videoChannel);
@@ -157,7 +145,7 @@ void loop() {
     static DateTime dateTime;
 
     xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-    dateTime      = getRtcTime();
+    dateTime      = rtc.getDateTime();
     unixTimestamp = TimeUtil::toUnixTimestamp(dateTime);
     xSemaphoreGive(globalAppMutex);
 

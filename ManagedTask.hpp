@@ -11,7 +11,6 @@ public:
 
     using CheckStoppedHandler  = bool (*)();
     using TaskHandler          = void (*)(CheckStoppedHandler checkStopped, void* param);
-    using CreateTlsDataHandler = void* (*) ();
 
     ManagedTask();
     ManagedTask(TaskHandler handler, uint32_t stackDepth = defaultStackDepth);
@@ -24,14 +23,7 @@ public:
     void requestStop() const;
     void join();
     tskTaskControlBlock* handle() const noexcept;
-    static void* getTlsData(size_t index, CreateTlsDataHandler factory);
-    static void setTlsData(size_t index, void* data);
-
-    template <typename T>
-    static T* getTlsData(size_t index, CreateTlsDataHandler factory) {
-        return static_cast<T*>(getTlsData(index, factory));
-    }
-
+    
 private:
     static void taskRoutine(void* param);
 

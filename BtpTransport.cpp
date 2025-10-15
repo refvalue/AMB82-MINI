@@ -3,6 +3,7 @@
 #include "BtpConstants.hpp"
 #include "BtpUtils.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -13,6 +14,9 @@
 #endif
 
 #include <portmacro.h>
+
+#undef min
+#undef max
 
 namespace Btp {
     namespace {
@@ -76,14 +80,14 @@ namespace Btp {
             }
         }
 
-        bool send(const uint8_t* data, size_t length) {
+        bool send(const uint8_t* data, size_t size) {
             const auto start = millis();
             size_t offset{};
             auto first = true;
 
-            while (offset < length) {
+            while (offset < size) {
                 const auto headerSize = Constants::headerSize + (first ? Constants::extraHeaderSize : 0);
-                const auto chunkLen   = min(Constants::mtu - headerSize, length - offset);
+                const auto chunkLen   = std::min(Constants::mtu - headerSize, size - offset);
                 const auto frameSize  = headerSize + chunkLen;
                 {
                     const auto frame = std::make_unique<uint8_t[]>(frameSize);
@@ -93,11 +97,11 @@ namespace Btp {
                     frame[3] = static_cast<uint8_t>(PacketType::Data);
 
                     if (first) {
-                        writeU32Be(frame.get() + Constants::headerSize, length);
+                        writeU32Be(frame.get() + Constants::headerSize, size);
                         first = false;
                     }
 
-                    memcpy(frame.get() + headerSize, data + offset, chunkLen);
+                    std::memcpy(frame.get() + headerSize, data + offset, chunkLen);
                     txNotifyRaw(frame.get(), frameSize, connId_ >= 0 ? connId_ : 0);
                 }
 
@@ -105,7 +109,7 @@ namespace Btp {
                 awaitingAckSeq_ = txSeq_;
                 awaitingSince_  = millis();
 
-                if (!waitForAck(data, offset, length, start)) {
+                if (!waitForAck(data, offset, size, start)) {
                     return false;
                 }
 
@@ -116,12 +120,12 @@ namespace Btp {
             return true;
         }
 
-        void setOnDataReceived(DataCallback cb) {
-            onDataReceived_ = std::move(cb);
+        void onDataReceived(DataHandler handler) {
+            onDataReceived_ = std::move(handler);
         }
 
-        void setOnError(ErrorCallback cb) {
-            onError_ = std::move(cb);
+        void onError(ErrorHandler handler) {
+            onError_ = std::move(handler);
         }
 
         int32_t getConnID() const {
@@ -129,7 +133,7 @@ namespace Btp {
         }
 
     private:
-        bool waitForAck(const uint8_t* data, size_t offset, size_t length, uint32_t startTimestamp) {
+        bool waitForAck(const uint8_t* data, size_t offset, size_t size, uint32_t startTimestamp) {
             for (;;) {
                 if (!awaitingAck_) {
                     return true;
@@ -147,7 +151,7 @@ namespace Btp {
 
                     const auto headerSize = Constants::headerSize + (txSeq_ == 0 ? Constants::extraHeaderSize : 0);
 
-                    const auto chunkLen  = min((size_t) (Constants::mtu - headerSize), length - offset);
+                    const auto chunkLen  = std::min((size_t) (Constants::mtu - headerSize), size - offset);
                     const auto frameSize = headerSize + chunkLen;
                     const auto frame     = std::make_unique<uint8_t[]>(frameSize);
 
@@ -156,10 +160,10 @@ namespace Btp {
                     frame[3] = static_cast<uint8_t>(PacketType::Data);
 
                     if (txSeq_ == 0) {
-                        writeU32Be(frame.get() + Constants::headerSize, length);
+                        writeU32Be(frame.get() + Constants::headerSize, size);
                     }
 
-                    memcpy(frame.get() + headerSize, data + offset, chunkLen);
+                    std::memcpy(frame.get() + headerSize, data + offset, chunkLen);
                     txNotifyRaw(frame.get(), frameSize, connId_ >= 0 ? connId_ : 0);
 
                     awaitingSince_ = millis();
@@ -245,7 +249,7 @@ namespace Btp {
                 }
 
                 if (copyLen > 0) {
-                    memcpy(rxBuffer_.get() + offset, tmp + payloadOffset, copyLen);
+                    std::memcpy(rxBuffer_.get() + offset, tmp + payloadOffset, copyLen);
                 }
 
                 if (seq < rxMaxChunks_) {
@@ -328,9 +332,18 @@ namespace Btp {
 
         uint16_t txSeq_;
 
-        DataCallback onDataReceived_;
-        ErrorCallback onError_;
+        DataHandler onDataReceived_;
+        ErrorHandler onError_;
     };
+
+    BtpTransport::BtpTransport(const char* serviceUuid, const char* rxUuid, const char* txUuid)
+        : impl_{std::make_unique<impl>(serviceUuid, rxUuid, txUuid)} {}
+
+    BtpTransport::BtpTransport(BtpTransport&&) noexcept = default;
+
+    BtpTransport::~BtpTransport() = default;
+
+    BtpTransport& BtpTransport::operator=(BtpTransport&&) noexcept = default;
 
     bool BtpTransport::begin(const char* deviceName) const {
         btpInstance = this;
@@ -342,24 +355,19 @@ namespace Btp {
         impl_->poll();
     }
 
-    bool BtpTransport::send(const uint8_t* data, size_t length) const {
-        return impl_->send(data, length);
+    bool BtpTransport::send(const uint8_t* data, size_t size) const {
+        return impl_->send(data, size);
     }
 
-    void BtpTransport::setOnDataReceived(DataCallback cb) const {
-        impl_->setOnDataReceived(std::move(cb));
+    void BtpTransport::onDataReceived(DataHandler handler) const {
+        impl_->onDataReceived(std::move(handler));
     }
 
-    void BtpTransport::setOnError(ErrorCallback cb) const {
-        impl_->setOnError(std::move(cb));
+    void BtpTransport::onError(ErrorHandler handler) const {
+        impl_->onError(std::move(handler));
     }
 
     int32_t BtpTransport::getConnID() const noexcept {
         return impl_->getConnID();
     }
-
-    BtpTransport::BtpTransport(const char* serviceUuid, const char* rxUuid, const char* txUuid)
-        : impl_{std::make_unique<impl>(serviceUuid, rxUuid, txUuid)} {}
-
-    BtpTransport::~BtpTransport() = default;
 } // namespace Btp

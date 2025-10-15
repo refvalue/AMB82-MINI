@@ -1,10 +1,14 @@
 #include "BtpTransportScheduler.hpp"
 
+#include "BtpTransport.hpp"
+#include "ManagedTask.hpp"
 #include "ObjectPool.hpp"
 
 #if 1
 #include <FreeRTOS.h>
 #endif
+
+#include <cstring>
 
 #include <LOGUARTClass.h>
 #include <portmacro.h>
@@ -18,91 +22,115 @@ namespace Btp {
         };
 
         using TxMessagePool = ObjectPool<TxMessage, 10>;
-
-        TxMessagePool& getPool() {
-            return *ManagedTask::getTlsData<TxMessagePool>(0, []() -> void* { return new TxMessagePool; });
-        }
     } // namespace
 
-    BtpTransportScheduler::BtpTransportScheduler(Btp::BtpTransport& transport) : transport_{transport}, txQueue_{} {}
+    class BtpTransportScheduler::impl {
+    public:
+        impl(BtpTransport& transport) : transport_{transport}, txQueue_{} {}
 
-    BtpTransportScheduler::~BtpTransportScheduler() {
-        stop();
-    }
-
-    bool BtpTransportScheduler::start(const char* deviceName) {
-        if (!transport_.begin(deviceName)) {
-            Serial.print("Failed to initialize BLE device: ");
-            Serial.println(deviceName);
-
-            return false;
+        ~impl() {
+            stop();
         }
 
-        txQueue_ = xQueueCreate(8, sizeof(TxMessage));
-        rxTask_  = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
-                       static_cast<BtpTransportScheduler*>(param)->rxTaskRoutine(checkStopped);
-                   },
-             this};
-
-        txTask_ = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
-                       static_cast<BtpTransportScheduler*>(param)->txTaskRoutine(checkStopped);
-                   },
-            this};
-
-        return true;
-    }
-
-    void BtpTransportScheduler::stop() {
-        rxTask_.requestStop();
-        txTask_.requestStop();
-        rxTask_.join();
-        txTask_.join();
-
-        if (txQueue_) {
-            vQueueDelete(txQueue_);
-            txQueue_ = nullptr;
-        }
-
-        Serial.println("BtpTransportScheduler stopped.");
-    }
-
-    bool BtpTransportScheduler::send(const uint8_t* data, size_t size) {
-        if (txQueue_) {
-            auto msg = getPool().acquire();
-
-            if (msg == nullptr) {
-                Serial.println("BtpTransportScheduler: Tx queue full.");
+        bool start(const char* deviceName) {
+            if (!transport_.begin(deviceName)) {
+                Serial.print("Failed to initialize BLE device: ");
+                Serial.println(deviceName);
 
                 return false;
             }
 
-            msg->data = std::make_unique<uint8_t[]>(size);
-            msg->size = size;
-            memcpy(msg->data.get(), data, size);
+            txQueue_ = xQueueCreate(8, sizeof(TxMessage));
+            rxTask_  = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
+                           static_cast<impl*>(param)->rxTaskRoutine(checkStopped);
+                       },
+                 this};
 
-            return xQueueSend(txQueue_, msg, 0) == pdTRUE;
+            txTask_ = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
+                           static_cast<impl*>(param)->txTaskRoutine(checkStopped);
+                       },
+                this};
+
+            return true;
         }
 
-        return false;
-    }
+        void stop() {
+            rxTask_.requestStop();
+            txTask_.requestStop();
+            rxTask_.join();
+            txTask_.join();
 
-    void BtpTransportScheduler::rxTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
-        while (!checkStopped()) {
-            transport_.poll();
-            vTaskDelay(pdMS_TO_TICKS(50));
+            if (txQueue_) {
+                vQueueDelete(txQueue_);
+                txQueue_ = nullptr;
+            }
+
+            Serial.println("BtpTransportScheduler stopped.");
         }
-    }
 
-    void BtpTransportScheduler::txTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
-        TxMessage* msg{};
+        bool send(const uint8_t* data, size_t size) {
+            if (txQueue_) {
+                const auto msg = pool_.acquire();
 
-        while (!checkStopped()) {
-            if (xQueueReceive(txQueue_, &msg, portMAX_DELAY) == pdTRUE && msg) {
-                transport_.send(msg->data.get(), msg->size);
-                getPool().release(msg);
+                if (msg == nullptr) {
+                    Serial.println("BtpTransportScheduler: Tx queue full.");
+
+                    return false;
+                }
+
+                msg->data = std::make_unique<uint8_t[]>(size);
+                msg->size = size;
+                std::memcpy(msg->data.get(), data, size);
+
+                return xQueueSend(txQueue_, msg, 0) == pdTRUE;
+            }
+
+            return false;
+        }
+
+    private:
+        void rxTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
+            while (!checkStopped()) {
+                transport_.poll();
+                vTaskDelay(pdMS_TO_TICKS(50));
             }
         }
 
-        delete &getPool();
+        void txTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
+            TxMessage* msg{};
+
+            while (!checkStopped()) {
+                if (xQueueReceive(txQueue_, &msg, portMAX_DELAY) == pdTRUE && msg) {
+                    transport_.send(msg->data.get(), msg->size);
+                    pool_.release(msg);
+                }
+            }
+        }
+
+        BtpTransport& transport_;
+        QueueDefinition* txQueue_;
+        TxMessagePool pool_;
+        ManagedTask rxTask_;
+        ManagedTask txTask_;
+    };
+
+    BtpTransportScheduler::BtpTransportScheduler(BtpTransport& transport) : pImpl_{std::make_unique<impl>(transport)} {}
+
+    BtpTransportScheduler::BtpTransportScheduler(BtpTransportScheduler&&) noexcept = default;
+
+    BtpTransportScheduler::~BtpTransportScheduler() = default;
+    
+    BtpTransportScheduler& BtpTransportScheduler::operator=(BtpTransportScheduler&&) noexcept = default;
+
+    bool BtpTransportScheduler::start(const char* deviceName) {
+        return pImpl_->start(deviceName);
+    }
+
+    void BtpTransportScheduler::stop() {
+        pImpl_->stop();
+    }
+
+    bool BtpTransportScheduler::send(const uint8_t* data, size_t size) {
+        return pImpl_->send(data, size);
     }
 } // namespace Btp

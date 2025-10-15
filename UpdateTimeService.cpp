@@ -1,44 +1,43 @@
-#include "DS3234.hpp"
-#include "HttpMessageServer.hpp"
-#include "HttpService.hpp"
-#include "HttpServiceUtil.hpp"
+#include "BleService.hpp"
+#include "DS3231.hpp"
+#include "MessageUtil.hpp"
 #include "Resources.hpp"
+#include "TimeUtil.hpp"
 #include "cJSON.hpp"
 
-#include <Client.h>
-#include <WString.h>
+#include <cstdint>
+#include <ctime>
+
+#if 1
+#include <FreeRTOS.h>
+#endif
+
+#include <semphr.h>
 #include <task.h>
-#include <time.h>
 
 namespace {
-    constexpr time_t y2k_timestamp = 946684800;
-
-    struct UpdateTimeService : HttpService {
-        void run(const String& methodPath, HttpMessage& message, Client& client) override {
-            const auto params = message.getBodyAsJson();
-            HttpMessageServer response{client};
-
-            if (cJSON_IsNull(params.get()) || cJSON_IsInvalid(params.get())) {
-                return HttpServiceUtil::sendResponseBody(response, "failure", -1, "Invalid request body.");
+    struct UpdateTimeService : BleService {
+        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
+            if (cJSON_IsNull(message) || cJSON_IsInvalid(message)) {
+                return MessageUtil::sendResponseBody(transport, "failure", -1, "Invalid request body.");
             }
 
-            if (const auto item = cJSON_GetObjectItem(params.get(), "timestamp"); item && cJSON_IsNumber(item)) {
+            if (const auto item = cJSON_GetObjectItem(message, "timestamp"); item && cJSON_IsNumber(item)) {
                 const auto timestamp = cJSON_GetNumberValue(item);
 
                 xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-                getDS3234().setDateTime(
-                    RtcDateTime{static_cast<uint32_t>(static_cast<time_t>(timestamp) - y2k_timestamp)});
+                globalRtc.setDateTime(TimeUtil::fromUnixTimestamp(static_cast<int64_t>(timestamp)));
                 xSemaphoreGive(globalAppMutex);
 
-                return HttpServiceUtil::sendResponseBody(response, true, 0, "RTC time successfully synchornized.");
+                return MessageUtil::sendResponseBody(transport, true, 0, "RTC time successfully synchornized.");
             }
 
-            HttpServiceUtil::sendResponseBody(response, false, -2, "Missing numeric parameter: `timestamp`.");
+            MessageUtil::sendResponseBody(transport, false, -2, "Missing numeric parameter: `timestamp`.");
         }
     };
 } // namespace
 
-auto&& updateTimeService = []() -> HttpService& {
+auto&& updateTimeService = []() -> BleService& {
     static UpdateTimeService service;
 
     return service;

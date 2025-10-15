@@ -7,18 +7,20 @@
 namespace Btp {
     class BtpTransport {
     public:
-        using DataCallback  = std::function<void(uint8_t*, size_t)>;
-        using ErrorCallback = std::function<void(const char*)>;
+        using DataHandler  = std::function<void(uint8_t*, size_t)>;
+        using ErrorHandler = std::function<void(const char*)>;
 
         BtpTransport(const char* serviceUuid, const char* rxUuid, const char* txUuid);
+        BtpTransport(BtpTransport&&) noexcept;
         ~BtpTransport();
+        BtpTransport& operator=(BtpTransport&&) noexcept;
 
         bool begin(const char* deviceName) const;
         void poll() const;
-        bool send(const uint8_t* data, size_t length) const;
+        bool send(const uint8_t* data, size_t size) const;
 
-        void setOnDataReceived(DataCallback cb) const;
-        void setOnError(ErrorCallback cb) const;
+        void onDataReceived(DataHandler handler) const;
+        void onError(ErrorHandler handler) const;
         int32_t getConnID() const noexcept;
 
     private:

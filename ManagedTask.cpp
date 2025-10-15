@@ -70,21 +70,6 @@ TaskHandle_t ManagedTask::handle() const noexcept {
     return task_;
 }
 
-void* ManagedTask::getTlsData(size_t index, CreateTlsDataHandler factory) {
-    auto data = pvTaskGetThreadLocalStoragePointer(nullptr, static_cast<BaseType_t>(index));
-
-    if (data == nullptr && factory) {
-        data = factory();
-        setTlsData(index, data);
-    }
-
-    return data;
-}
-
-void ManagedTask::setTlsData(size_t index, void* data) {
-    vTaskSetThreadLocalStoragePointer(nullptr, static_cast<BaseType_t>(index), data);
-}
-
 void ManagedTask::taskRoutine(void* param) {
     auto&& self = *static_cast<ManagedTask*>(param);
 

@@ -1,19 +1,21 @@
 #include "AppConfig.hpp"
-#include "HttpMessageServer.hpp"
-#include "HttpService.hpp"
-#include "HttpServiceUtil.hpp"
+#include "BleService.hpp"
+#include "MessageUtil.hpp"
 #include "Resources.hpp"
 #include "cJSON.hpp"
 
-#include <Client.h>
-#include <WString.h>
-#include <stddef.h>
+#include <cstddef>
+#include <cstdint>
+
+#if 1
+#include <FreeRTOS.h>
+#endif
+
+#include <semphr.h>
 
 namespace {
-    struct CurrentScheduleService : HttpService {
-        void run(const String& methodPath, HttpMessage& message, Client& client) override {
-            HttpMessageServer response{client};
-
+    struct CurrentScheduleService : BleService {
+        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
             cJSONPtr data{cJSON_CreateObject()};
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
@@ -21,12 +23,12 @@ namespace {
             xSemaphoreGive(globalAppMutex);
 
             cJSON_AddItemReferenceToObject(data.get(), "schedule", schedule.get());
-            HttpServiceUtil::sendResponseBody(response, true, 0, "Success", data.get());
+            MessageUtil::sendResponseBody(transport, true, 0, "Success", data.get());
         }
     };
 } // namespace
 
-auto&& currentScheduleService = []() -> HttpService& {
+auto&& currentScheduleService = []() -> BleService& {
     static CurrentScheduleService service;
 
     return service;

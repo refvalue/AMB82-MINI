@@ -1,31 +1,27 @@
 #pragma once
 
-#include "BtpTransport.hpp"
-#include "ManagedTask.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 
-struct QueueDefinition;
-
 namespace Btp {
+    class BtpTransport;
+
     class BtpTransportScheduler {
     public:
         explicit BtpTransportScheduler(BtpTransport& transport);
+        BtpTransportScheduler(BtpTransportScheduler&&) noexcept;
         ~BtpTransportScheduler();
+        BtpTransportScheduler& operator=(BtpTransportScheduler&&) noexcept;
 
         bool start(const char* deviceName);
         void stop();
         bool send(const uint8_t* data, size_t size);
 
     private:
-        void rxTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped);
-        void txTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped);
+        class impl;
 
-        BtpTransport& transport_;
-        ManagedTask rxTask_;
-        ManagedTask txTask_;
-        QueueDefinition* txQueue_;
+        std::unique_ptr<impl> pImpl_;
     };
 } // namespace Btp
