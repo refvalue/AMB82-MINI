@@ -28,6 +28,7 @@ extern BleService& systemInfoService;
 extern BleService& currentScheduleService;
 extern BleService& updateTimeService;
 extern BleService& updateScheduleService;
+extern BleService& configureWiFiHotspotService;
 
 extern HttpService& fallbackService;
 extern HttpService& videoStreamingService;
@@ -38,6 +39,8 @@ namespace {
     constexpr int32_t videoChannel = 0;
 
     TrackedValue<AppConfig> appConfig{AppConfig::createDefault()};
+    auto appConfigUpdated = false;
+    auto appConfigCache   = AppConfig::createDefault();
 
     DS3231 rtc{Wire};
     VideoSetting videoSetting{videoChannel};
@@ -62,27 +65,34 @@ namespace {
         OSD.begin();
     }
 
-    void loadAppConfig() {
+    void loadConfig() {
         SDFs.begin();
         globalAppMutex = xSemaphoreCreateMutex();
         appConfig.update(AppConfig::fromFile(appConfigFileName));
         appConfig.value.dump();
     }
 
-    void driveRecording(int64_t timestamp, const String& dateTime) {
-        static bool recorded;
-
+    void updateConfigCache() {
         xSemaphoreTake(globalAppMutex, portMAX_DELAY);
         if (appConfig.updated) {
             appConfig.confirm();
             appConfig.value.save(appConfigFileName);
-            recordingStateMachine.update(appConfig.value.recording.schedule);
+            appConfigCache   = appConfig.value;
+            appConfigUpdated = true;
+        }
+        xSemaphoreGive(globalAppMutex);
+    }
+
+    void driveRecording(int64_t timestamp, const String& dateTime) {
+        static bool recorded;
+
+        if (appConfigUpdated) {
+            recordingStateMachine.update(appConfigCache.recording.schedule);
         }
 
-        const auto baseName           = appConfig.value.recording.baseName;
-        const auto singleFileDuration = appConfig.value.recording.singleFileDuration;
+        const auto baseName           = appConfigCache.recording.baseName;
+        const auto singleFileDuration = appConfigCache.recording.singleFileDuration;
         const auto item               = recordingStateMachine.tryMatch(timestamp, recorded);
-        xSemaphoreGive(globalAppMutex);
 
         if (item) {
             streamer.setBaseFileName(baseName);
@@ -92,12 +102,28 @@ namespace {
             Serial.print("Start recording: ");
             Serial.println(dateTime);
             Serial.print("Duration: ");
-            Serial.println(item.getValue().duration);
+            Serial.println(item->duration);
         } else if (recorded) {
             streamer.tick(timestamp);
         } else if (streamer.stopRecording(timestamp)) {
             Serial.print("Stop recording: ");
             Serial.println(dateTime);
+        }
+    }
+
+    void updateWiFiHotspot() {
+        if (appConfigUpdated) {
+            if (appConfigCache.hotspot.enabled) {
+                WiFiHotspot.start(appConfigCache.hotspot.ssid, appConfigCache.hotspot.password, 1);
+                webServer.start();
+                liveStreamingServer.start();
+                Serial.println("WiFi Hotspot started.");
+            } else {
+                webServer.stop();
+                liveStreamingServer.stop();
+                WiFiHotspot.stop();
+                Serial.println("WiFi Hotspot stopped.");
+            }
         }
     }
 } // namespace
@@ -114,7 +140,7 @@ void setup() {
     }
 
     rtc.begin();
-    loadAppConfig();
+    loadConfig();
     initMultimedia();
 
     if (rtc.alarm1Triggered()) {
@@ -124,15 +150,13 @@ void setup() {
     WiFiHotspot.start(appConfig.value.hotspot.ssid, appConfig.value.hotspot.password, 1);
 
     webServer.setFallbackService(&fallbackService);
-    webServer.start();
-
     liveStreamingServer.addService("GET /live", &videoStreamingService);
-    liveStreamingServer.start();
 
     bleServer.addService(RequestType::getSystemInfo, &systemInfoService);
     bleServer.addService(RequestType::getRecordingSchedule, &currentScheduleService);
     bleServer.addService(RequestType::setSystemTime, &updateTimeService);
     bleServer.addService(RequestType::setRecordingSchedule, &updateScheduleService);
+    bleServer.addService(RequestType::configureWiFiHotspot, &configureWiFiHotspotService);
     bleServer.start();
 
     // Starts feeding multimedia data.
@@ -155,7 +179,13 @@ void loop() {
     OSD.drawText(videoChannel, 36, 36, dateTimeText, 0xFFFFFFFF);
     OSD.update(videoChannel);
 
+    updateConfigCache();
+    updateWiFiHotspot();
     driveRecording(unixTimestamp, dateTimeText);
+
+    if (appConfigUpdated) {
+        appConfigUpdated = false;
+    }
 
     if (++counter % 10 == 0) {
         WiFiHotspot.dump();

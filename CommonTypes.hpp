@@ -3,7 +3,7 @@
 enum class RequestType {
     getSystemInfo,
     setSystemTime,
-    enableWiFiHotspot,
+    configureWiFiHotspot,
     getRecordingSchedule,
     setRecordingSchedule,
 };

@@ -2,11 +2,11 @@
 #include "BleService.hpp"
 #include "MessageUtil.hpp"
 #include "Resources.hpp"
-#include "SafeList.hpp"
 #include "cJSON.hpp"
 
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #if 1
 #include <FreeRTOS.h>
@@ -22,7 +22,7 @@ namespace {
             }
 
             if (const auto schedule = cJSON_GetObjectItem(message, "schedule"); schedule && cJSON_IsArray(schedule)) {
-                SafeList<AppConfig::RecordingPlan> scheduleList;
+                std::vector<AppConfig::RecordingPlan> scheduleList;
                 cJSON* startTimestamp{};
                 cJSON* duration{};
 
@@ -34,10 +34,8 @@ namespace {
                         return MessageUtil::sendResponseBody(transport, false, -2, "Invalid schedule item.");
                     }
 
-                    scheduleList.add(AppConfig::RecordingPlan{
-                        .startTimestamp = static_cast<int64_t>(cJSON_GetNumberValue(startTimestamp)),
-                        .duration       = static_cast<uint32_t>(cJSON_GetNumberValue(duration)),
-                    });
+                    scheduleList.emplace_back(static_cast<int64_t>(cJSON_GetNumberValue(startTimestamp)),
+                        static_cast<uint32_t>(cJSON_GetNumberValue(duration)));
                 }
 
                 xSemaphoreTake(globalAppMutex, portMAX_DELAY);

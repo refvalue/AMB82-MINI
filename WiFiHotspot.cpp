@@ -6,8 +6,12 @@
 
 #include "WiFiHotspot.hpp"
 
+#include <cstring>
+
+#include <LOGUARTClass.h>
+#include <WiFi.h>
 #include <itoa.h>
-#include <string.h>
+#include <wifi_conf.h>
 
 namespace {
     constexpr uint8_t defaultIPAddress[] = {192, 168, 88, 1};
@@ -35,6 +39,10 @@ void WiFiHotspotClass::start(
     while (wifi_.apbegin(inner_ssid, inner_password, inner_channel) != WL_CONNECTED) {
         delay(10000);
     }
+}
+
+void WiFiHotspotClass::stop() const {
+    wifi_off();
 }
 
 void WiFiHotspotClass::dump() const {

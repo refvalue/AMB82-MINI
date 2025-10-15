@@ -1,10 +1,13 @@
 #include "AppConfig.hpp"
+
 #include "Resources.hpp"
 #include "cJSON.h"
 
+#include <optional>
+#include <utility>
+
 #include <AmebaFatFS.h>
 #include <Arduino.h>
-#include <Optional.h>
 
 namespace {
     constexpr char defaultSSID[]                 = "AMB82 Mini Box";
@@ -51,8 +54,8 @@ namespace {
         return config;
     }
 
-    Optional<AppConfig::RecordingPlan> parseRecordingPlan(const cJSON* json) {
-        Optional<AppConfig::RecordingPlan> result;
+    std::optional<AppConfig::RecordingPlan> parseRecordingPlan(const cJSON* json) {
+        std::optional<AppConfig::RecordingPlan> result;
         const auto startTimestamp = cJSON_GetObjectItem(json, "startTimestamp");
 
         if (startTimestamp == nullptr || !cJSON_IsNumber(startTimestamp)) {
@@ -65,12 +68,13 @@ namespace {
             return result;
         }
 
-        result.emplace();
-        result.ref().startTimestamp = static_cast<int64_t>(cJSON_GetNumberValue(startTimestamp));
-        result.ref().duration       = static_cast<uint32_t>(cJSON_GetNumberValue(duration));
+        auto&& plan = result.emplace();
 
-        if (result.ref().duration < 1) {
-            result.ref().duration = 1;
+        plan.startTimestamp = static_cast<int64_t>(cJSON_GetNumberValue(startTimestamp));
+        plan.duration       = static_cast<uint32_t>(cJSON_GetNumberValue(duration));
+
+        if (plan.duration < 1) {
+            plan.duration = 1;
         }
 
         return result;
@@ -121,7 +125,7 @@ namespace {
 
         for (auto item = schedule->child; item; item = item->next) {
             if (auto plan = parseRecordingPlan(item)) {
-                config.schedule.add(plan.getValue());
+                config.schedule.emplace_back(std::move(*plan));
             } else {
                 Serial.println("Invalid schedule item detected.");
             }
@@ -182,13 +186,12 @@ cJSONPtr AppConfig::getHotspotJson() {
 cJSONPtr AppConfig::getScheduleJson() {
     cJSONPtr schedule{cJSON_CreateArray()};
 
-    for (size_t i = 0; i < static_cast<size_t>(recording.schedule.getSize()); i++) {
-        const auto item = cJSON_CreateObject();
-        auto&& plan     = recording.schedule.at(i);
+    for (auto&& item : recording.schedule) {
+        const auto json = cJSON_CreateObject();
 
-        cJSON_AddItemToArray(schedule.get(), item);
-        cJSON_AddNumberToObject(item, "startTimestamp", static_cast<double>(plan.startTimestamp));
-        cJSON_AddNumberToObject(item, "duration", static_cast<double>(plan.duration));
+        cJSON_AddItemToArray(schedule.get(), json);
+        cJSON_AddNumberToObject(json, "startTimestamp", static_cast<double>(item.startTimestamp));
+        cJSON_AddNumberToObject(json, "duration", static_cast<double>(item.duration));
     }
 
     return schedule;

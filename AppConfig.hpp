@@ -1,13 +1,15 @@
 #pragma once
 
-#include "SafeList.hpp"
 #include "cJSON.hpp"
 
+#include <cstdint>
+#include <vector>
+
 #include <WString.h>
-#include <stdint.h>
 
 struct AppConfig {
     struct HotspotConfig {
+        bool enabled{};
         String ssid;
         String password;
     };
@@ -20,7 +22,7 @@ struct AppConfig {
     struct RecordingConfig {
         String baseName;
         uint32_t singleFileDuration{};
-        SafeList<RecordingPlan> schedule;
+        std::vector<RecordingPlan> schedule;
     };
 
     HotspotConfig hotspot;

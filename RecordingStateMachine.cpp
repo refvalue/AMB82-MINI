@@ -1,13 +1,13 @@
-#include "CryptoUtil.hpp"
 #include "RecordingStateMachine.hpp"
+
+#include "CryptoUtil.hpp"
 
 #include <WString.h>
 
-void RecordingStateMachine::update(SafeList<AppConfig::RecordingPlan>& schedule) {
+void RecordingStateMachine::update(std::span<AppConfig::RecordingPlan> schedule) {
     itemMapping_.destroy();
 
-    for (size_t i = 0; i < static_cast<size_t>(schedule.getSize()); i++) {
-        auto&& item = schedule.at(i);
+    for (auto&& item : schedule) {
         const auto key =
             CryptoUtil::sha256(String{static_cast<uint32_t>(static_cast<uint64_t>(item.startTimestamp) >> 32)}
                                + String{static_cast<uint32_t>(item.startTimestamp)} + String{item.duration});
@@ -19,7 +19,6 @@ void RecordingStateMachine::update(SafeList<AppConfig::RecordingPlan>& schedule)
         if (const auto key = stateMapping_.key(i); !itemMapping_(key)) {
             stateMapping_.remove(key.c_str());
         }
-        
     }
 
     for (size_t i = 0; i < itemMapping_.size(); i++) {
@@ -29,8 +28,8 @@ void RecordingStateMachine::update(SafeList<AppConfig::RecordingPlan>& schedule)
     }
 }
 
-Optional<AppConfig::RecordingPlan> RecordingStateMachine::tryMatch(int64_t timestamp, bool& recorded) {
-    Optional<AppConfig::RecordingPlan> result;
+std::optional<AppConfig::RecordingPlan> RecordingStateMachine::tryMatch(int64_t timestamp, bool& recorded) {
+    std::optional<AppConfig::RecordingPlan> result;
     bool found{};
 
     recorded = false;
