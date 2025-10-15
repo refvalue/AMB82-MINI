@@ -19,7 +19,7 @@ namespace {
             cJSONPtr data{cJSON_CreateObject()};
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            const auto schedule = globalAppConfig.value.getScheduleJson();
+            const auto schedule = globalAppConfig.current()->first.getScheduleJson();
             xSemaphoreGive(globalAppMutex);
 
             cJSON_AddItemReferenceToObject(data.get(), "schedule", schedule.get());

@@ -231,3 +231,5 @@ AppConfig AppConfig::fromFile(const String& path) {
 
     return createDefault();
 }
+
+TrackedValue<AppConfig> globalAppConfig{AppConfig::createDefault()};

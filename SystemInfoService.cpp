@@ -29,7 +29,7 @@ namespace {
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
             cJSON_AddNumberToObject(data.get(), "timestamp", TimeUtil::toUnixTimestamp(globalRtc.getDateTime()));
-            cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.value.getHotspotJson().detach());
+            cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.current()->first.getHotspotJson().detach());
             xSemaphoreGive(globalAppMutex);
 
             MessageUtil::sendResponseBody(transport, true, 0, "Success", data.get());

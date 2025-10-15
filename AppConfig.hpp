@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TrackedValue.hpp"
 #include "cJSON.hpp"
 
 #include <cstdint>
@@ -36,3 +37,5 @@ struct AppConfig {
     static AppConfig createDefault();
     static AppConfig fromFile(const String& path);
 };
+
+extern TrackedValue<AppConfig> globalAppConfig;

@@ -15,9 +15,12 @@
 #include "TrackedValue.hpp"
 #include "WiFiHotspot.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <ctime>
+#include <memory>
 #include <tuple>
+#include <utility>
 
 #include <AmebaFatFS.h>
 #include <VideoStream.h>
@@ -38,9 +41,7 @@ extern MMFModule& videoStreamingMMFModule;
 namespace {
     constexpr int32_t videoChannel = 0;
 
-    TrackedValue<AppConfig> appConfig{AppConfig::createDefault()};
-    auto appConfigUpdated = false;
-    auto appConfigCache   = AppConfig::createDefault();
+    std::shared_ptr<TrackedValue<AppConfig>::ElementPair> appConfigCache;
 
     DS3231 rtc{Wire};
     VideoSetting videoSetting{videoChannel};
@@ -68,30 +69,31 @@ namespace {
     void loadConfig() {
         SDFs.begin();
         globalAppMutex = xSemaphoreCreateMutex();
-        appConfig.update(AppConfig::fromFile(appConfigFileName));
-        appConfig.value.dump();
+        globalAppConfig.update(AppConfig::fromFile(appConfigFileName));
+        globalAppConfig.current()->first.dump();
     }
 
     void updateConfigCache() {
-        xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-        if (appConfig.updated) {
-            appConfig.confirm();
-            appConfig.value.save(appConfigFileName);
-            appConfigCache   = appConfig.value;
-            appConfigUpdated = true;
+        auto cache               = globalAppConfig.current();
+        auto&& [config, updated] = *cache;
+
+        if (updated) {
+            config.save(appConfigFileName);
         }
-        xSemaphoreGive(globalAppMutex);
+
+        appConfigCache = std::move(cache);
     }
 
     void driveRecording(int64_t timestamp, const String& dateTime) {
         static bool recorded;
+        auto&& [config, updated] = *appConfigCache;
 
-        if (appConfigUpdated) {
-            recordingStateMachine.update(appConfigCache.recording.schedule);
+        if (updated) {
+            recordingStateMachine.update(config.recording.schedule);
         }
 
-        const auto baseName           = appConfigCache.recording.baseName;
-        const auto singleFileDuration = appConfigCache.recording.singleFileDuration;
+        const auto baseName           = config.recording.baseName;
+        const auto singleFileDuration = config.recording.singleFileDuration;
         const auto item               = recordingStateMachine.tryMatch(timestamp, recorded);
 
         if (item) {
@@ -112,9 +114,11 @@ namespace {
     }
 
     void updateWiFiHotspot() {
-        if (appConfigUpdated) {
-            if (appConfigCache.hotspot.enabled) {
-                WiFiHotspot.start(appConfigCache.hotspot.ssid, appConfigCache.hotspot.password, 1);
+        auto&& [config, updated] = *appConfigCache;
+
+        if (updated) {
+            if (config.hotspot.enabled) {
+                WiFiHotspot.start(config.hotspot.ssid, config.hotspot.password, 1);
                 webServer.start();
                 liveStreamingServer.start();
                 Serial.println("WiFi Hotspot started.");
@@ -129,8 +133,7 @@ namespace {
 } // namespace
 
 QueueHandle_t globalAppMutex;
-DS3231& globalRtc                        = rtc;
-TrackedValue<AppConfig>& globalAppConfig = appConfig;
+DS3231& globalRtc = rtc;
 
 void setup() {
     Serial.begin(115200);
@@ -146,8 +149,6 @@ void setup() {
     if (rtc.alarm1Triggered()) {
         rtc.clearAlarm1Flag();
     }
-
-    WiFiHotspot.start(appConfig.value.hotspot.ssid, appConfig.value.hotspot.password, 1);
 
     webServer.setFallbackService(&fallbackService);
     liveStreamingServer.addService("GET /live", &videoStreamingService);
@@ -183,8 +184,8 @@ void loop() {
     updateWiFiHotspot();
     driveRecording(unixTimestamp, dateTimeText);
 
-    if (appConfigUpdated) {
-        appConfigUpdated = false;
+    if (appConfigCache->second) {
+        globalAppConfig.confirm();
     }
 
     if (++counter % 10 == 0) {

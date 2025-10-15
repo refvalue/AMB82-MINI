@@ -39,8 +39,9 @@ namespace {
                 }
 
                 xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-                globalAppConfig.value.recording.schedule = std::move(scheduleList);
-                globalAppConfig.markUpdated();
+                auto config               = globalAppConfig.current()->first;
+                config.recording.schedule = std::move(scheduleList);
+                globalAppConfig.update(std::move(config));
                 xSemaphoreGive(globalAppMutex);
 
                 return MessageUtil::sendResponseBody(transport, true, 0, "Recording schedule successfully updated.");
