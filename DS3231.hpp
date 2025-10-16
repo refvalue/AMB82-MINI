@@ -11,6 +11,8 @@ public:
     void begin();
     DateTime getDateTime();
     void setDateTime(const DateTime& dateTime);
+    void enableAlarm1(bool enable);
+    void enableAlarm2(bool enable);
     void setAlarm1(const DateTime& dateTime);
     void setAlarm2(const DateTime& dateTime);
     bool alarm1Triggered();

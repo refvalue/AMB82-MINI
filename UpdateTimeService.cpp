@@ -1,12 +1,10 @@
 #include "BleService.hpp"
-#include "DS3231.hpp"
 #include "MessageUtil.hpp"
 #include "Resources.hpp"
 #include "TimeUtil.hpp"
 #include "cJSON.hpp"
 
 #include <cstdint>
-#include <ctime>
 
 #if 1
 #include <FreeRTOS.h>
@@ -25,11 +23,10 @@ namespace {
             if (const auto item = cJSON_GetObjectItem(message, "timestamp"); item && cJSON_IsNumber(item)) {
                 const auto timestamp = cJSON_GetNumberValue(item);
 
-                xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-                globalRtc.setDateTime(TimeUtil::fromUnixTimestamp(static_cast<int64_t>(timestamp)));
-                xSemaphoreGive(globalAppMutex);
+                globalPendingTimestampSince2020.store(
+                    TimeUtil::toTimestampSince2020(static_cast<int64_t>(timestamp)), std::memory_order_release);
 
-                return MessageUtil::sendResponseBody(transport, true, 0, "RTC time successfully synchornized.");
+                return MessageUtil::sendResponseBody(transport, true, 0, "RTC time update pending.");
             }
 
             MessageUtil::sendResponseBody(transport, false, -2, "Missing numeric parameter: `timestamp`.");

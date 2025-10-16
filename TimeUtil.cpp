@@ -1,5 +1,7 @@
 #include "TimeUtil.hpp"
 
+#include <cstdio>
+
 namespace TimeUtil {
     int64_t toUnixTimestamp(const DateTime& dateTime) noexcept {
         return toUnixTimestamp(
@@ -21,7 +23,15 @@ namespace TimeUtil {
         return days * 86400LL + hour * 3600LL + min * 60LL + sec;
     }
 
-    DateTime fromUnixTimestamp(int64_t timestamp) noexcept {
+    int64_t toTimestampSince2020(int64_t timestamp) noexcept {
+        return timestamp - 1577836800LL;
+    }
+
+    int64_t toUnixTimestampFromSince2020(int64_t timestampSince2020) noexcept {
+        return timestampSince2020 + 1577836800LL;
+    }
+
+    DateTime toDateTime(int64_t timestamp) noexcept {
         DateTime result;
 
         auto days = timestamp / 86400LL + 719468LL;
@@ -49,5 +59,14 @@ namespace TimeUtil {
         result.year  = static_cast<uint16_t>(y + (result.month <= 2 ? 1 : 0));
 
         return result;
+    }
+
+    String toIso8601(const DateTime& dateTime) {
+        char buffer[21]{};
+
+        snprintf(buffer, sizeof(buffer), "%04u-%02u-%02uT%02u:%02u:%02uZ", dateTime.year, dateTime.month, dateTime.day,
+            dateTime.hour, dateTime.minute, dateTime.second);
+
+        return String{buffer};
     }
 } // namespace TimeUtil

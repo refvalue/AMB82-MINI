@@ -15,13 +15,13 @@ namespace Btp {
         ~BtpTransportScheduler();
         BtpTransportScheduler& operator=(BtpTransportScheduler&&) noexcept;
 
-        bool start(const char* deviceName);
-        void stop();
-        bool send(const uint8_t* data, size_t size);
+        bool start(const char* deviceName) const;
+        void stop() const;
+        bool send(const uint8_t* data, size_t size) const;
 
     private:
         class impl;
 
-        std::unique_ptr<impl> pImpl_;
+        std::unique_ptr<impl> impl_;
     };
 } // namespace Btp

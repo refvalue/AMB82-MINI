@@ -1,6 +1,5 @@
 #include "AppConfig.hpp"
 #include "BleService.hpp"
-#include "DS3231.hpp"
 #include "MessageUtil.hpp"
 #include "Resources.hpp"
 #include "TimeUtil.hpp"
@@ -28,7 +27,8 @@ namespace {
             cJSON_AddNumberToObject(sdcard, "usedSpace", static_cast<double>(SDFs.get_used_space()));
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            cJSON_AddNumberToObject(data.get(), "timestamp", TimeUtil::toUnixTimestamp(globalRtc.getDateTime()));
+            cJSON_AddNumberToObject(data.get(), "timestamp",
+                TimeUtil::toUnixTimestampFromSince2020(globalNowSince2020.load(std::memory_order_acquire)));
             cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.current()->first.getHotspotJson().detach());
             xSemaphoreGive(globalAppMutex);
 

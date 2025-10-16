@@ -50,7 +50,19 @@ namespace {
         wire.endTransmission();
     }
 
-    bool isAlarmTriggered(TwoWire& wire, uint8_t flagMask) {
+    void enableAlarm(TwoWire& wire, bool enable, uint8_t controlMask) {
+        auto control = readReg(wire, 0x0E);
+
+        if (enable) {
+            control |= controlMask;
+        } else {
+            control &= ~controlMask;
+        }
+
+        setReg(wire, 0x0E, control);
+    }
+
+    bool checkAlarmTriggered(TwoWire& wire, uint8_t flagMask) {
         const auto status = readReg(wire, 0x0F);
         return (status & flagMask) != 0;
     }
@@ -118,6 +130,14 @@ void DS3231::setDateTime(const DateTime& dateTime) {
     wire_.endTransmission();
 }
 
+void DS3231::enableAlarm1(bool enable) {
+    enableAlarm(wire_, enable, 0x01);
+}
+
+void DS3231::enableAlarm2(bool enable) {
+    enableAlarm(wire_, enable, 0x02);
+}
+
 void DS3231::setAlarm1(const DateTime& dateTime) {
     setAlarm(wire_, dateTime, 0x07);
 
@@ -137,11 +157,11 @@ void DS3231::setAlarm2(const DateTime& dateTime) {
 }
 
 bool DS3231::alarm1Triggered() {
-    return isAlarmTriggered(wire_, 0x01);
+    return checkAlarmTriggered(wire_, 0x01);
 }
 
 bool DS3231::alarm2Triggered() {
-    return isAlarmTriggered(wire_, 0x02);
+    return checkAlarmTriggered(wire_, 0x02);
 }
 
 void DS3231::clearAlarm1Flag() {

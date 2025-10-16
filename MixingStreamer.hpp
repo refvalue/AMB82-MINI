@@ -1,44 +1,31 @@
 #pragma once
 
-#if 1
-#include <cstddef>
 #include <cstdint>
-#include <ctime>
+#include <memory>
 
 #include <WString.h>
-#endif
 
-#if 1
-#include <StreamIO.h>
-#endif
-
-#include <MP4Recording.h>
-#include <Optional.h>
-#include <VideoStream.h>
+class MMFModule;
+class VideoSetting;
 
 class MixingStreamer {
 public:
     MixingStreamer();
+    MixingStreamer(MixingStreamer&&) noexcept;
     ~MixingStreamer();
-    void init(MMFModule videoInput, MMFModule mixedOutput, VideoSetting& videoSetting);
-
-    void reset();
-    uint32_t singleFileDuration();
-    void setSingleFileDuration(uint32_t value);
-    String baseFileName();
-    void setBaseFileName(const String& value);
-    void startRecording(int64_t timestamp);
-    bool stopRecording(int64_t timestamp);
-    void tick(int64_t timestamp);
+    MixingStreamer& operator=(MixingStreamer&&) noexcept;
+    void init(MMFModule videoInput, MMFModule mixedOutput, VideoSetting& videoSetting) const;
+    void reset() const;
+    uint32_t singleFileDuration() const;
+    void setSingleFileDuration(uint32_t value) const;
+    String baseFileName()const;
+    void setBaseFileName(const String& value)const;
+    void startRecording(int64_t timestamp)const;
+    bool stopRecording(int64_t timestamp)const;
+    void tick(int64_t timestamp)const;
 
 private:
-    void increaseFileName(bool reset = false);
+    class impl;
 
-    size_t index_;
-    String baseFileName_;
-    struct tm startTime_;
-    Optional<int64_t> lastTimestamp_;
-
-    MP4Recording mp4_;
-    StreamIO avMixStreamer_;
+    std::unique_ptr<impl> impl_;
 };

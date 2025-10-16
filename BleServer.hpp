@@ -16,16 +16,16 @@ public:
     BleServer(BleServer&&) noexcept;
     ~BleServer();
     BleServer& operator=(BleServer&&) noexcept;
-    void addService(int32_t type, BleService* service);
+    void addService(int32_t type, BleService* service) const;
 
     template <typename Enum>
         requires std::is_enum_v<Enum>
-    void addService(Enum type, BleService* service) {
+    void addService(Enum type, BleService* service) const {
         addService(static_cast<int32_t>(type), service);
     }
 
-    void start();
-    void stop();
+    void start() const;
+    void stop() const;
 
 private:
     class impl;

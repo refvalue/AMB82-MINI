@@ -2,10 +2,11 @@
 
 #include "ManagedTask.hpp"
 
+#include <cstdint>
+
 #include <DictionaryDeclarations.h>
 #include <WString.h>
 #include <WiFi.h>
-#include <stdint.h>
 
 struct HttpService;
 

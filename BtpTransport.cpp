@@ -4,7 +4,10 @@
 #include "BtpUtils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
+#include <ranges>
+#include <span>
 #include <utility>
 
 #include <BLEDevice.h>
@@ -14,6 +17,7 @@
 #endif
 
 #include <portmacro.h>
+#include <semphr.h>
 
 #undef min
 #undef max
@@ -26,8 +30,9 @@ namespace Btp {
     class BtpTransport::impl {
     public:
         impl(const char* serviceUuid, const char* rxUuid, const char* txUuid)
-            : service_{serviceUuid}, rxChar_{rxUuid}, txChar_{txUuid}, notifyEnabled_{}, connId_{-1}, rxExpectedLen_{},
-              rxMaxChunks_{}, lastReceiveMillis_{}, awaitingAck_{}, awaitingAckSeq_{}, awaitingSince_{}, txSeq_{} {}
+            : mutex_{xSemaphoreCreateMutex()}, service_{serviceUuid}, rxChar_{rxUuid}, txChar_{txUuid},
+              notifyEnabled_{}, connId_{-1}, rxExpectedLen_{}, rxMaxChunks_{}, lastReceiveMillis_{}, awaitingAck_{},
+              awaitingAckSeq_{}, awaitingSince_{}, txSeq_{} {}
 
         ~impl() {
             freeReceiveState();
@@ -48,7 +53,7 @@ namespace Btp {
             txChar_.setReadProperty(true);
             txChar_.setReadPermissions(GATT_PERM_READ);
             txChar_.setNotifyProperty(true);
-            txChar_.setCCCDCallback(&impl::staticNotifCb);
+            txChar_.setCCCDCallback(&impl::staticNotifyCb);
             txChar_.setBufferLen(Constants::mtu);
 
             service_.addCharacteristic(rxChar_);
@@ -65,12 +70,14 @@ namespace Btp {
         }
 
         void poll() {
+            xSemaphoreTake(mutex_, portMAX_DELAY);
+
             if (rxBuffer_) {
                 if (millis() - lastReceiveMillis_ > Constants::receiveTimeoutMs) {
                     freeReceiveState();
 
                     if (onError_)
-                        onError_("Receive timeout");
+                        onError_("Receive timeout.");
                 }
             }
 
@@ -78,6 +85,8 @@ namespace Btp {
                 if (millis() - awaitingSince_ > Constants::ackTimeoutMs) {
                 }
             }
+
+            xSemaphoreGive(mutex_);
         }
 
         bool send(const uint8_t* data, size_t size) {
@@ -87,13 +96,13 @@ namespace Btp {
 
             while (offset < size) {
                 const auto headerSize = Constants::headerSize + (first ? Constants::extraHeaderSize : 0);
-                const auto chunkLen   = std::min(Constants::mtu - headerSize, size - offset);
-                const auto frameSize  = headerSize + chunkLen;
+                const auto chunkSize  = std::min(Constants::mtu - headerSize, size - offset);
+                const auto frameSize  = headerSize + chunkSize;
                 {
                     const auto frame = std::make_unique<uint8_t[]>(frameSize);
 
                     writeU16Be(frame.get(), txSeq_);
-                    frame[2] = static_cast<uint8_t>(chunkLen);
+                    frame[2] = static_cast<uint8_t>(chunkSize);
                     frame[3] = static_cast<uint8_t>(PacketType::Data);
 
                     if (first) {
@@ -101,7 +110,7 @@ namespace Btp {
                         first = false;
                     }
 
-                    std::memcpy(frame.get() + headerSize, data + offset, chunkLen);
+                    std::memcpy(frame.get() + headerSize, data + offset, chunkSize);
                     txNotifyRaw(frame.get(), frameSize, connId_ >= 0 ? connId_ : 0);
                 }
 
@@ -114,7 +123,7 @@ namespace Btp {
                 }
 
                 ++txSeq_;
-                offset += chunkLen;
+                offset += chunkSize;
             }
 
             return true;
@@ -150,20 +159,19 @@ namespace Btp {
                     }
 
                     const auto headerSize = Constants::headerSize + (txSeq_ == 0 ? Constants::extraHeaderSize : 0);
-
-                    const auto chunkLen  = std::min((size_t) (Constants::mtu - headerSize), size - offset);
-                    const auto frameSize = headerSize + chunkLen;
-                    const auto frame     = std::make_unique<uint8_t[]>(frameSize);
+                    const auto chunkSize  = std::min((size_t) (Constants::mtu - headerSize), size - offset);
+                    const auto frameSize  = headerSize + chunkSize;
+                    const auto frame      = std::make_unique<uint8_t[]>(frameSize);
 
                     writeU16Be(frame.get(), txSeq_);
-                    frame[2] = static_cast<uint8_t>(chunkLen);
+                    frame[2] = static_cast<uint8_t>(chunkSize);
                     frame[3] = static_cast<uint8_t>(PacketType::Data);
 
                     if (txSeq_ == 0) {
                         writeU32Be(frame.get() + Constants::headerSize, size);
                     }
 
-                    std::memcpy(frame.get() + headerSize, data + offset, chunkLen);
+                    std::memcpy(frame.get() + headerSize, data + offset, chunkSize);
                     txNotifyRaw(frame.get(), frameSize, connId_ >= 0 ? connId_ : 0);
 
                     awaitingSince_ = millis();
@@ -189,98 +197,96 @@ namespace Btp {
             rxFlags_       = std::make_unique<bool[]>(rxMaxChunks_);
         }
 
-        void handleRxWrite(BLECharacteristic* chr, uint8_t connId) {
-            connId_  = connId;
-            auto len = chr->getDataLen();
+        void processAck(uint16_t seq) {
+            xSemaphoreTake(mutex_, portMAX_DELAY);
 
-            if (len <= 0) {
-                return;
+            if (awaitingAck_ && seq == awaitingAckSeq_) {
+                awaitingAck_ = false;
             }
 
-            uint8_t tmp[512];
+            xSemaphoreGive(mutex_);
+        }
 
-            if (len > sizeof(tmp)) {
-                len = sizeof(tmp);
-            }
+        void processIncomingData(uint16_t seq, uint8_t payloadSize, std::span<const uint8_t> data) {
+            auto payloadOffset = Constants::headerSize;
 
-            chr->getData(tmp, len);
-
-            if (len < Constants::headerSize) {
-                return;
-            }
-
-            const auto seq        = readU16Be(tmp);
-            const auto payloadLen = tmp[2];
-            const auto type       = static_cast<PacketType>(tmp[3]);
-
-            if (type == PacketType::Ack) {
-                if (awaitingAck_ && seq == awaitingAckSeq_) {
-                    awaitingAck_ = false;
-                }
-                return;
-            }
-
-            if (type == PacketType::Data) {
-                auto payloadOffset = Constants::headerSize;
-
-                if (seq == 0) {
-                    if (len < Constants::headerSize + Constants::extraHeaderSize) {
-                        return;
-                    }
-
-                    const auto expected = readU32Be(tmp + Constants::headerSize);
-
-                    if (expected == 0) {
-                        return;
-                    }
-
-                    freeReceiveState();
-                    allocReceiveBuffers(expected);
-                    payloadOffset += Constants::extraHeaderSize;
-                } else if (!rxBuffer_) {
+            if (seq == 0) {
+                if (data.size() < Constants::headerSize + Constants::extraHeaderSize) {
                     return;
                 }
 
-                const auto offset = seq * Constants::maxPayload;
-                auto copyLen      = payloadLen;
+                const auto expected = readU32Be(data.data() + Constants::headerSize);
 
-                if (offset + copyLen > rxExpectedLen_) {
-                    copyLen = offset >= rxExpectedLen_ ? 0 : rxExpectedLen_ - offset;
+                if (expected == 0) {
+                    return;
                 }
 
-                if (copyLen > 0) {
-                    std::memcpy(rxBuffer_.get() + offset, tmp + payloadOffset, copyLen);
+                freeReceiveState();
+                allocReceiveBuffers(expected);
+                payloadOffset += Constants::extraHeaderSize;
+            } else if (!rxBuffer_) {
+                return;
+            }
+
+            const auto offset = seq * Constants::maxPayload;
+            auto copySize     = payloadSize;
+
+            if (offset + copySize > rxExpectedLen_) {
+                copySize = offset >= rxExpectedLen_ ? 0 : rxExpectedLen_ - offset;
+            }
+
+            if (copySize > 0) {
+                std::memcpy(rxBuffer_.get() + offset, data.data() + payloadOffset, copySize);
+            }
+
+            if (seq < rxMaxChunks_) {
+                rxFlags_[seq] = true;
+            }
+
+            lastReceiveMillis_ = millis();
+
+            uint8_t ack[Constants::headerSize];
+            writeU16Be(ack, seq);
+
+            ack[2] = 0;
+            ack[3] = static_cast<uint8_t>(PacketType::Ack);
+            txNotifyRaw(ack, Constants::headerSize, connId_);
+
+            if (const auto all = std::ranges::all_of(
+                    rxFlags_.get(), rxFlags_.get() + rxMaxChunks_, [](auto inner) { return inner; })) {
+                if (onDataReceived_) {
+                    onDataReceived_(rxBuffer_.get(), rxExpectedLen_);
                 }
 
-                if (seq < rxMaxChunks_) {
-                    rxFlags_[seq] = true;
-                }
+                freeReceiveState();
+            }
+        }
 
-                lastReceiveMillis_ = millis();
+        void handleRxWrite(BLECharacteristic* chr, uint8_t connId) {
+            connId_   = connId;
+            auto size = chr->getDataLen();
 
-                uint8_t ack[Constants::headerSize];
-                writeU16Be(ack, seq);
+            if (size <= 0 || size < Constants::headerSize) {
+                return;
+            }
+            const auto buffer      = chr->getDataBuff();
+            const auto seq         = readU16Be(buffer);
+            const auto payloadSize = buffer[2];
+            const auto type        = static_cast<PacketType>(buffer[3]);
 
-                ack[2] = 0;
-                ack[3] = static_cast<uint8_t>(PacketType::Ack);
-                txNotifyRaw(ack, Constants::headerSize, connId_);
-
-                auto all = true;
-
-                for (size_t i = 0; i < rxMaxChunks_; i++) {
-                    if (!rxFlags_[i]) {
-                        all = false;
-                        break;
-                    }
-                }
-
-                if (all) {
-                    if (onDataReceived_) {
-                        onDataReceived_(rxBuffer_.get(), rxExpectedLen_);
-                    }
-
-                    freeReceiveState();
-                }
+            switch ((type)) {
+            case PacketType::Ack:
+                xSemaphoreTake(mutex_, portMAX_DELAY);
+                processAck(seq);
+                xSemaphoreGive(mutex_);
+                break;
+            case PacketType::Data:
+                xSemaphoreTake(mutex_, portMAX_DELAY);
+                processIncomingData(seq, payloadSize, std::span{buffer, size});
+                xSemaphoreGive(mutex_);
+                break;
+            default:
+                break;
             }
         }
 
@@ -289,36 +295,34 @@ namespace Btp {
             notifyEnabled_ = (cccd & GATT_CLIENT_CHAR_CONFIG_NOTIFY);
         }
 
-        void txNotifyRaw(const uint8_t* buf, size_t len, int32_t connId) {
-            if (len == 0) {
-                return;
+        void txNotifyRaw(const uint8_t* data, size_t size, int32_t connId) {
+            if (data && size != 0) {
+                txChar_.setData(const_cast<uint8_t*>(data), static_cast<uint16_t>(size));
+                txChar_.notify(connId >= 0 ? connId : 0);
             }
-
-            txChar_.setData(const_cast<uint8_t*>(buf), static_cast<uint16_t>(len));
-            txChar_.notify(connId >= 0 ? connId : 0);
         }
 
-        // static wrappers for BLE callbacks
         static void staticWriteCb(BLECharacteristic* chr, uint8_t connId) {
             if (btpInstance) {
                 btpInstance->impl_->handleRxWrite(chr, connId);
             }
         }
 
-        static void staticNotifCb(BLECharacteristic* chr, uint8_t connId, uint16_t cccd) {
+        static void staticNotifyCb(BLECharacteristic* chr, uint8_t connId, uint16_t cccd) {
             if (btpInstance) {
                 btpInstance->impl_->handleTxCccd(chr, connId, cccd);
             }
         }
 
+        SemaphoreHandle_t mutex_;
         BLEService service_;
         BLECharacteristic rxChar_;
         BLECharacteristic txChar_;
         BLEAdvertData adv_;
         BLEAdvertData scan_;
 
-        volatile bool notifyEnabled_;
-        volatile int connId_;
+        bool notifyEnabled_;
+        int32_t connId_;
 
         size_t rxExpectedLen_;
         size_t rxMaxChunks_;

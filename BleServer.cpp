@@ -71,14 +71,14 @@ BleServer::~BleServer() = default;
 
 BleServer& BleServer::operator=(BleServer&&) noexcept = default;
 
-void BleServer::addService(int32_t type, BleService* service) {
+void BleServer::addService(int32_t type, BleService* service) const {
     impl_->addService(type, service);
 }
 
-void BleServer::start() {
+void BleServer::start() const {
     impl_->start();
 }
 
-void BleServer::stop() {
+void BleServer::stop() const {
     impl_->stop();
 }

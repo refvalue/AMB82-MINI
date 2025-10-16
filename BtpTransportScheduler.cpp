@@ -114,23 +114,23 @@ namespace Btp {
         ManagedTask txTask_;
     };
 
-    BtpTransportScheduler::BtpTransportScheduler(BtpTransport& transport) : pImpl_{std::make_unique<impl>(transport)} {}
+    BtpTransportScheduler::BtpTransportScheduler(BtpTransport& transport) : impl_{std::make_unique<impl>(transport)} {}
 
     BtpTransportScheduler::BtpTransportScheduler(BtpTransportScheduler&&) noexcept = default;
 
     BtpTransportScheduler::~BtpTransportScheduler() = default;
-    
+
     BtpTransportScheduler& BtpTransportScheduler::operator=(BtpTransportScheduler&&) noexcept = default;
 
-    bool BtpTransportScheduler::start(const char* deviceName) {
-        return pImpl_->start(deviceName);
+    bool BtpTransportScheduler::start(const char* deviceName) const {
+        return impl_->start(deviceName);
     }
 
-    void BtpTransportScheduler::stop() {
-        pImpl_->stop();
+    void BtpTransportScheduler::stop() const {
+        impl_->stop();
     }
 
-    bool BtpTransportScheduler::send(const uint8_t* data, size_t size) {
-        return pImpl_->send(data, size);
+    bool BtpTransportScheduler::send(const uint8_t* data, size_t size) const {
+        return impl_->send(data, size);
     }
 } // namespace Btp

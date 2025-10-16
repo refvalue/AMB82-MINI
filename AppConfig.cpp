@@ -7,7 +7,7 @@
 #include <utility>
 
 #include <AmebaFatFS.h>
-#include <Arduino.h>
+#include <LOGUARTClass.h>
 
 namespace {
     constexpr char defaultSSID[]                 = "AMB82 Mini Box";

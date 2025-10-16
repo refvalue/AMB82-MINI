@@ -9,7 +9,7 @@
 #include "DateTime.hpp"
 #include "HttpServer.hpp"
 #include "MixingStreamer.hpp"
-#include "RecordingStateMachine.hpp"
+#include "RecordingController.hpp"
 #include "Resources.hpp"
 #include "TimeUtil.hpp"
 #include "TrackedValue.hpp"
@@ -17,7 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
-#include <ctime>
+#include <limits>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -26,6 +26,11 @@
 #include <VideoStream.h>
 #include <VideoStreamOverlay.h>
 #include <Wire.h>
+
+#undef min
+#undef max
+#undef true
+#undef false
 
 extern BleService& systemInfoService;
 extern BleService& currentScheduleService;
@@ -39,20 +44,31 @@ extern HttpService& videoStreamingService;
 extern MMFModule& videoStreamingMMFModule;
 
 namespace {
+    constexpr auto noPendingValue = std::numeric_limits<int32_t>::min();
+}
+
+std::atomic_int32_t globalNowSince2020{0};
+std::atomic_int32_t globalPendingTimestampSince2020{noPendingValue};
+
+QueueHandle_t globalAppMutex;
+
+namespace {
     constexpr int32_t videoChannel = 0;
+    constexpr char deviceName[]    = "NinoCam Smart Box";
+    constexpr char serviceUuid[]   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    constexpr char rxUuid[]        = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    constexpr char txUuid[]        = "d506d318-2fbc-4d2c-8a67-f14b7313f3df";
 
     std::shared_ptr<TrackedValue<AppConfig>::ElementPair> appConfigCache;
 
-    DS3231 rtc{Wire};
+    DS3231 ds3231{Wire};
     VideoSetting videoSetting{videoChannel};
     MixingStreamer streamer;
-    RecordingStateMachine recordingStateMachine;
+    RecordingController recordingController{ds3231, streamer};
 
     HttpServer webServer{80};
     HttpServer liveStreamingServer{8080};
-
-    BleServer bleServer{"NinoCam Smart Box", "4fafc201-1fb5-459e-8fcc-c5c9c331914b",
-        "beb5483e-36e1-4688-b7f5-ea07361b26a8", "d506d318-2fbc-4d2c-8a67-f14b7313f3df"};
+    BleServer bleServer{deviceName, serviceUuid, rxUuid, txUuid};
 
     void initMultimedia() {
         Camera.configVideoChannel(videoChannel, videoSetting);
@@ -84,32 +100,12 @@ namespace {
         appConfigCache = std::move(cache);
     }
 
-    void driveRecording(int64_t timestamp, const String& dateTime) {
-        static bool recorded;
-        auto&& [config, updated] = *appConfigCache;
-
-        if (updated) {
-            recordingStateMachine.update(config.recording.schedule);
-        }
-
-        const auto baseName           = config.recording.baseName;
-        const auto singleFileDuration = config.recording.singleFileDuration;
-        const auto item               = recordingStateMachine.tryMatch(timestamp, recorded);
-
-        if (item) {
-            streamer.setBaseFileName(baseName);
-            streamer.setSingleFileDuration(singleFileDuration);
-            streamer.startRecording(timestamp);
-
-            Serial.print("Start recording: ");
-            Serial.println(dateTime);
-            Serial.print("Duration: ");
-            Serial.println(item->duration);
-        } else if (recorded) {
-            streamer.tick(timestamp);
-        } else if (streamer.stopRecording(timestamp)) {
-            Serial.print("Stop recording: ");
-            Serial.println(dateTime);
+    void updateDateTime() {
+        if (const auto timestamp = globalPendingTimestampSince2020.exchange(noPendingValue, std::memory_order_acq_rel);
+            timestamp != noPendingValue) {
+            ds3231.setDateTime(TimeUtil::toDateTime(TimeUtil::toUnixTimestampFromSince2020(timestamp)));
+            Serial.print("System time updated: ");
+            Serial.println(TimeUtil::toIso8601(ds3231.getDateTime()));
         }
     }
 
@@ -130,10 +126,19 @@ namespace {
             }
         }
     }
+
+    void driveRecording() {
+        static bool recorded;
+        auto&& [config, updated] = *appConfigCache;
+
+        if (updated) {
+            recordingController.update(config.recording);
+        }
+
+        recordingController.tick();
+    }
 } // namespace
 
-QueueHandle_t globalAppMutex;
-DS3231& globalRtc = rtc;
 
 void setup() {
     Serial.begin(115200);
@@ -142,12 +147,12 @@ void setup() {
         // Waits for serial port to connect. Needed for native USB port only。
     }
 
-    rtc.begin();
+    ds3231.begin();
     loadConfig();
     initMultimedia();
 
-    if (rtc.alarm1Triggered()) {
-        rtc.clearAlarm1Flag();
+    if (ds3231.alarm1Triggered()) {
+        ds3231.clearAlarm1Flag();
     }
 
     webServer.setFallbackService(&fallbackService);
@@ -166,30 +171,27 @@ void setup() {
 
 void loop() {
     static int32_t counter;
-    static time_t unixTimestamp;
-    static DateTime dateTime;
 
-    xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-    dateTime      = rtc.getDateTime();
-    unixTimestamp = TimeUtil::toUnixTimestamp(dateTime);
-    xSemaphoreGive(globalAppMutex);
+    const auto dateTime     = ds3231.getDateTime();
+    const auto dateTimeText = TimeUtil::toIso8601(dateTime);
 
-    const auto dateTimeText = ctime(&unixTimestamp);
+    globalNowSince2020.store(
+        TimeUtil::toTimestampSince2020(TimeUtil::toUnixTimestamp(dateTime)), std::memory_order::release);
 
     OSD.createBitmap(videoChannel);
-    OSD.drawText(videoChannel, 36, 36, dateTimeText, 0xFFFFFFFF);
+    OSD.drawText(videoChannel, 36, 36, dateTimeText.c_str(), 0xFFFFFFFF);
     OSD.update(videoChannel);
 
+    updateDateTime();
     updateConfigCache();
     updateWiFiHotspot();
-    driveRecording(unixTimestamp, dateTimeText);
+    driveRecording();
 
     if (appConfigCache->second) {
         globalAppConfig.confirm();
     }
 
-    if (++counter % 10 == 0) {
-        WiFiHotspot.dump();
+    if (++counter % 2 == 0) {
         Serial.println(dateTimeText);
     }
 

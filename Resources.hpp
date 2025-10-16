@@ -1,6 +1,7 @@
 #pragma once
 
-class DS3231;
+#include <atomic>
+
 class AmebaFatFS;
 struct QueueDefinition;
 
@@ -15,4 +16,5 @@ extern const char appConfigFileName[];
 
 extern AmebaFatFS& SDFs;
 extern QueueDefinition* globalAppMutex;
-extern DS3231& globalRtc;
+extern std::atomic_int32_t globalNowSince2020;
+extern std::atomic_int32_t globalPendingTimestampSince2020;
