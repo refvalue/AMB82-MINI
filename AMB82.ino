@@ -54,7 +54,7 @@ QueueHandle_t globalAppMutex;
 
 namespace {
     constexpr int32_t videoChannel = 0;
-    constexpr char deviceName[]    = "NinoCam Smart Box";
+    constexpr char deviceName[]    = "NINOCAM_SMART_BOX";
     constexpr char serviceUuid[]   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     constexpr char rxUuid[]        = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
     constexpr char txUuid[]        = "d506d318-2fbc-4d2c-8a67-f14b7313f3df";
@@ -146,6 +146,9 @@ void setup() {
     while (!Serial) {
         // Waits for serial port to connect. Needed for native USB port only。
     }
+
+    Serial.print("System free heap size: ");
+    Serial.println(xPortGetFreeHeapSize());
 
     ds3231.begin();
     loadConfig();

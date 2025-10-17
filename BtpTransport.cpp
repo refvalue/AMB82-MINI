@@ -39,31 +39,29 @@ namespace Btp {
         }
 
         bool begin(const char* deviceName) {
-            BLE.init();
-
             adv_.addFlags(GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED);
             adv_.addCompleteName(deviceName);
-            scan_.addCompleteServices(BLEUUID(service_.getUUID().str()));
+            scan_.addCompleteServices(service_.getUUID());
 
             rxChar_.setWriteProperty(true);
             rxChar_.setWritePermissions(GATT_PERM_WRITE);
             rxChar_.setWriteCallback(&impl::staticWriteCb);
-            rxChar_.setBufferLen(Constants::mtu);
+            rxChar_.setBufferLen(static_cast<uint16_t>(Constants::mtu));
 
             txChar_.setReadProperty(true);
             txChar_.setReadPermissions(GATT_PERM_READ);
             txChar_.setNotifyProperty(true);
             txChar_.setCCCDCallback(&impl::staticNotifyCb);
-            txChar_.setBufferLen(Constants::mtu);
+            txChar_.setBufferLen(static_cast<uint16_t>(Constants::mtu));
 
             service_.addCharacteristic(rxChar_);
             service_.addCharacteristic(txChar_);
 
+            BLE.init();
             BLE.configAdvert()->setAdvData(adv_);
             BLE.configAdvert()->setScanRspData(scan_);
             BLE.configServer(1);
             BLE.addService(service_);
-
             BLE.beginPeripheral();
 
             return true;
