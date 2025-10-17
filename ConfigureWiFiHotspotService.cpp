@@ -1,7 +1,6 @@
 #include "AppConfig.hpp"
 #include "BleService.hpp"
 #include "MessageUtil.hpp"
-#include "Resources.hpp"
 #include "cJSON.hpp"
 
 #include <cstdint>
@@ -22,11 +21,9 @@ namespace {
             }
 
             if (const auto enabled = cJSON_GetObjectItem(message, "enabled"); enabled && cJSON_IsBool(enabled)) {
-                xSemaphoreTake(globalAppMutex, portMAX_DELAY);
                 auto config            = globalAppConfig.current()->first;
                 config.hotspot.enabled = cJSON_IsTrue(enabled);
                 globalAppConfig.update(std::move(config));
-                xSemaphoreGive(globalAppMutex);
 
                 return MessageUtil::sendResponseBody(transport, true, 0, "Hotspot configuration successfully updated.");
             }

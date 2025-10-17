@@ -103,7 +103,7 @@ namespace {
     void updateDateTime() {
         if (const auto timestamp = globalPendingTimestampSince2020.exchange(noPendingValue, std::memory_order_acq_rel);
             timestamp != noPendingValue) {
-            ds3231.setDateTime(TimeUtil::toDateTime(TimeUtil::toUnixTimestampFromSince2020(timestamp)));
+            ds3231.setDateTime(TimeUtil::toDateTimeFromSince2020(timestamp));
             Serial.print("System time updated: ");
             Serial.println(TimeUtil::toIso8601(ds3231.getDateTime()));
         }
@@ -175,8 +175,7 @@ void loop() {
     const auto dateTime     = ds3231.getDateTime();
     const auto dateTimeText = TimeUtil::toIso8601(dateTime);
 
-    globalNowSince2020.store(
-        TimeUtil::toTimestampSince2020(TimeUtil::toUnixTimestamp(dateTime)), std::memory_order::release);
+    globalNowSince2020.store(TimeUtil::toTimestampSince2020(dateTime), std::memory_order::release);
 
     OSD.createBitmap(videoChannel);
     OSD.drawText(videoChannel, 36, 36, dateTimeText.c_str(), 0xFFFFFFFF);

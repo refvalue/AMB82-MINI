@@ -23,11 +23,19 @@ namespace TimeUtil {
         return days * 86400LL + hour * 3600LL + min * 60LL + sec;
     }
 
-    int64_t toTimestampSince2020(int64_t timestamp) noexcept {
-        return timestamp - 1577836800LL;
+    int32_t toTimestampSince2020(int64_t timestamp) noexcept {
+        return static_cast<int32_t>(timestamp - 1577836800LL);
     }
 
-    int64_t toUnixTimestampFromSince2020(int64_t timestampSince2020) noexcept {
+    int32_t toTimestampSince2020(const DateTime& dateTime) noexcept {
+        return toTimestampSince2020(toUnixTimestamp(dateTime));
+    }
+
+    DateTime toDateTimeFromSince2020(int32_t timestampSince2020) noexcept {
+        return toDateTime(toUnixTimestampFromSince2020(timestampSince2020));
+    }
+
+    int64_t toUnixTimestampFromSince2020(int32_t timestampSince2020) noexcept {
         return timestampSince2020 + 1577836800LL;
     }
 
