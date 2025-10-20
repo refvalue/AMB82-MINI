@@ -20,7 +20,7 @@ public:
     void stop();
 
 private:
-    static void acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped, void* param);
+    void acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped);
 
     Dictionary services_;
     HttpService* fallbackService_;

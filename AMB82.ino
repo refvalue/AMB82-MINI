@@ -1,8 +1,3 @@
-#undef min
-#undef max
-#undef true
-#undef false
-
 #include "AppConfig.hpp"
 #include "BleServer.hpp"
 #include "DS3231.hpp"
@@ -26,11 +21,6 @@
 #include <VideoStream.h>
 #include <VideoStreamOverlay.h>
 #include <Wire.h>
-
-#undef min
-#undef max
-#undef true
-#undef false
 
 extern BleService& systemInfoService;
 extern BleService& currentScheduleService;
@@ -128,7 +118,6 @@ namespace {
     }
 
     void driveRecording() {
-        static bool recorded;
         auto&& [config, updated] = *appConfigCache;
 
         if (updated) {
@@ -138,7 +127,6 @@ namespace {
         recordingController.tick();
     }
 } // namespace
-
 
 void setup() {
     Serial.begin(115200);

@@ -5,9 +5,6 @@
 #include <limits>
 #include <utility>
 
-#undef min
-#undef max
-
 void RecordingStateMachine::update(std::span<const AppConfig::RecordingPlan> schedule) {
     itemMapping_.clear();
 

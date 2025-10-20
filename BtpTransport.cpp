@@ -19,9 +19,6 @@
 #include <portmacro.h>
 #include <semphr.h>
 
-#undef min
-#undef max
-
 namespace Btp {
     namespace {
         const BtpTransport* btpInstance{};

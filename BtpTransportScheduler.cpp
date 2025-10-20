@@ -45,15 +45,8 @@ namespace Btp {
             Serial.println("` started.");
 
             txQueue_ = xQueueCreate(8, sizeof(TxMessage));
-            rxTask_  = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
-                           static_cast<impl*>(param)->rxTaskRoutine(checkStopped);
-                       },
-                 this};
-
-            txTask_ = {[](ManagedTask::CheckStoppedHandler checkStopped, void* param) {
-                           static_cast<impl*>(param)->txTaskRoutine(checkStopped);
-                       },
-                this};
+            rxTask_  = {std::bind_front(&impl::rxTaskRoutine, this)};
+            txTask_ = {std::bind_front(&impl::txTaskRoutine, this)};
 
             return true;
         }
@@ -94,7 +87,6 @@ namespace Btp {
 
     private:
         void rxTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
-            Serial.println("==========================HAHAHAHAHAHA");
             while (!checkStopped()) {
                 transport_.poll();
                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -103,7 +95,6 @@ namespace Btp {
 
         void txTaskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
             TxMessage* msg{};
-            Serial.println("==========================MMMMMMM");
             while (!checkStopped()) {
                 if (xQueueReceive(txQueue_, &msg, portMAX_DELAY) == pdTRUE && msg) {
                     transport_.send(msg->data.get(), msg->size);

@@ -1,6 +1,7 @@
+#include "HttpServer.hpp"
+
 #include "HttpMessage.hpp"
 #include "HttpMessageServer.hpp"
-#include "HttpServer.hpp"
 #include "HttpService.hpp"
 
 #if 1
@@ -66,7 +67,7 @@ void HttpServer::setFallbackService(HttpService* service) {
 void HttpServer::start() {
     stop();
     impl_.begin();
-    task_ = {&HttpServer::acceptRoutine, this};
+    task_ = {std::bind_front(&HttpServer::acceptRoutine, this)};
     Serial.print("Task Created: ");
     Serial.println(String{reinterpret_cast<uint32_t>(task_.handle())});
 }
@@ -75,11 +76,9 @@ void HttpServer::stop() {
     impl_.stop();
 }
 
-void HttpServer::acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped, void* param) {
-    auto&& self = *static_cast<HttpServer*>(param);
-
+void HttpServer::acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
     while (!checkStopped()) {
-        auto client = self.impl_.available();
+        auto client = impl_.available();
 
         if (!client) {
             continue;
@@ -100,8 +99,8 @@ void HttpServer::acceptRoutine(ManagedTask::CheckStoppedHandler checkStopped, vo
                 if (c == '\r') {
                     // Extracts the method and path, e.g. `GET /api/test`.
                     if (firstCr) {
-                        service = getHttpService(line, methodPath, self.services_);
-                        service = service ? service : self.fallbackService_;
+                        service = getHttpService(line, methodPath, services_);
+                        service = service ? service : fallbackService_;
                         firstCr = false;
                     } else {
                         parseAddHeader(line, message);
