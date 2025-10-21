@@ -33,10 +33,15 @@ namespace Btp {
 
         ~impl() {
             freeReceiveState();
+
+            if (mutex_) {
+                vQueueDelete(mutex_);
+                mutex_ = nullptr;
+            }
         }
 
         bool begin(const char* deviceName) {
-            adv_.addFlags(GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED);
+            adv_.addFlags();
             adv_.addCompleteName(deviceName);
             scan_.addCompleteServices(service_.getUUID());
 

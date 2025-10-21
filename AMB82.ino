@@ -18,6 +18,7 @@
 #include <utility>
 
 #include <AmebaFatFS.h>
+#include <BLEDevice.h>
 #include <VideoStream.h>
 #include <VideoStreamOverlay.h>
 #include <Wire.h>
@@ -44,7 +45,7 @@ QueueHandle_t globalAppMutex;
 
 namespace {
     constexpr int32_t videoChannel = 0;
-    constexpr char deviceName[]    = "NINOCAM_SMART_BOX";
+    constexpr char deviceName[]    = "NINOCAM";
     constexpr char serviceUuid[]   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     constexpr char rxUuid[]        = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
     constexpr char txUuid[]        = "d506d318-2fbc-4d2c-8a67-f14b7313f3df";
@@ -155,7 +156,7 @@ void setup() {
     bleServer.addService(RequestType::setRecordingSchedule, &updateScheduleService);
     bleServer.addService(RequestType::configureWiFiHotspot, &configureWiFiHotspotService);
     bleServer.start();
-
+    
     // Starts feeding multimedia data.
     Camera.channelBegin(videoChannel);
 }
@@ -174,7 +175,7 @@ void loop() {
 
     updateDateTime();
     updateConfigCache();
-    updateWiFiHotspot();
+    //updateWiFiHotspot();
     driveRecording();
 
     if (appConfigCache->second) {

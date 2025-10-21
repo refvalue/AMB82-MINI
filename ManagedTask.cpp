@@ -40,9 +40,7 @@ ManagedTask::~ManagedTask() {
 
 ManagedTask& ManagedTask::operator=(ManagedTask&& right) noexcept {
     if (this != &right) {
-        requestStop();
-        join();
-        task_ = std::exchange(right.task_, {});
+        std::swap(task_, right.task_);
     }
 
     return *this;
