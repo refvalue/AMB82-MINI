@@ -1,9 +1,7 @@
-#include "AppConfig.hpp"
 #include "BleService.hpp"
-#include "MessageUtil.hpp"
 #include "Resources.hpp"
 #include "TimeUtil.hpp"
-#include "cJSON.hpp"
+#include "TlvWriter.hpp"
 
 #include <cstdint>
 
@@ -17,23 +15,22 @@
 #include <semphr.h>
 
 namespace {
-    struct SystemInfoService : BleService {
-        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
-            cJSONPtr data{cJSON_CreateObject()};
+    class SystemInfoService : public BleService {
+    public:
+        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
+            writer_.clear();
+            writer_.write(1, static_cast<uint32_t>(SDFs.get_free_space()));
+            writer_.write(2, static_cast<uint32_t>(SDFs.get_used_space()));
 
-            const auto sdcard = cJSON_AddObjectToObject(data.get(), "sdcard");
+            const auto timestamp =
+                TimeUtil::toUnixTimestampFromSince2020(globalNowSince2020.load(std::memory_order_acquire));
 
-            cJSON_AddNumberToObject(sdcard, "freeSpace", static_cast<double>(SDFs.get_free_space()));
-            cJSON_AddNumberToObject(sdcard, "usedSpace", static_cast<double>(SDFs.get_used_space()));
-
-            xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            cJSON_AddNumberToObject(data.get(), "timestamp",
-                TimeUtil::toUnixTimestampFromSince2020(globalNowSince2020.load(std::memory_order_acquire)));
-            cJSON_AddItemToObject(data.get(), "hotspot", globalAppConfig.current()->first.getHotspotJson().detach());
-            xSemaphoreGive(globalAppMutex);
-
-            MessageUtil::sendResponseBody(transport, true, 0, "Success", data.get());
+            writer_.write(3, static_cast<uint64_t>(timestamp));
+            transport.send(writer_.data());
         }
+
+    private:
+        TlvWriter writer_;
     };
 } // namespace
 

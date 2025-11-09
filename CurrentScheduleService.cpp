@@ -1,8 +1,7 @@
 #include "AppConfig.hpp"
 #include "BleService.hpp"
-#include "MessageUtil.hpp"
 #include "Resources.hpp"
-#include "cJSON.hpp"
+#include "TlvWriter.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -14,17 +13,19 @@
 #include <semphr.h>
 
 namespace {
-    struct CurrentScheduleService : BleService {
-        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
-            cJSONPtr data{cJSON_CreateObject()};
-
+    class CurrentScheduleService : public BleService {
+    public:
+        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-            const auto schedule = globalAppConfig.current()->first.getScheduleJson();
+            const auto config = globalAppConfig.current()->first;
             xSemaphoreGive(globalAppMutex);
 
-            cJSON_AddItemReferenceToObject(data.get(), "schedule", schedule.get());
-            MessageUtil::sendResponseBody(transport, true, 0, "Success", data.get());
+            writer_.clear();
+            config.writeTlv(writer_);
         }
+
+    private:
+        TlvWriter writer_;
     };
 } // namespace
 

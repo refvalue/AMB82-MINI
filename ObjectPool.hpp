@@ -1,10 +1,10 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #if 1
 #include <FreeRTOS.h>
@@ -12,11 +12,12 @@
 
 #include <semphr.h>
 
-template <typename T, size_t PoolSize>
+template <typename T>
 class ObjectPool {
 public:
-    ObjectPool() : freeCount_{PoolSize}, mutex_{xSemaphoreCreateMutex()} {
-        for (size_t i = 0; i < PoolSize; i++) {
+    ObjectPool(size_t capacity)
+        : freeCount_{capacity}, pool_(capacity), freeIndices_(capacity), mutex_{xSemaphoreCreateMutex()} {
+        for (size_t i = 0; i < capacity; i++) {
             freeIndices_[i] = i;
         }
     }
@@ -48,7 +49,7 @@ public:
 
 private:
     size_t freeCount_;
-    std::array<T, PoolSize> pool_;
-    std::array<size_t, PoolSize> freeIndices_;
+    std::vector<T> pool_;
+    std::vector<size_t> freeIndices_;
     SemaphoreHandle_t mutex_;
 };

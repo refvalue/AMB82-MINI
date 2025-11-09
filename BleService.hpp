@@ -1,15 +1,11 @@
 #pragma once
 
 #include "BtpTransport.hpp"
-#include "CommonTypes.hpp"
 
 #include <cstdint>
-
-#include <WString.h>
-
-struct cJSON;
+#include <span>
 
 struct BleService {
-    virtual ~BleService()                                                               = default;
-    virtual void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) = 0;
+    virtual ~BleService()                                                                       = default;
+    virtual void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) = 0;
 };

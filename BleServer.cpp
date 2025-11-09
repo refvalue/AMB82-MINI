@@ -3,9 +3,7 @@
 #include "BleService.hpp"
 #include "BtpTransport.hpp"
 #include "BtpTransportScheduler.hpp"
-#include "cJSON.hpp"
 
-#include <string>
 #include <unordered_map>
 
 #include <LOGUARTClass.h>
@@ -21,45 +19,34 @@ public:
     }
 
     void start() {
-        transport_.onDataReceived([this](uint8_t* data, size_t size) {
-            const cJSONPtr root{cJSON_Parse(std::string{reinterpret_cast<char*>(data), size}.c_str())};
-
-            if (!root) {
-                return;
-            }
-
-            const auto typeItem = cJSON_GetObjectItem(root.get(), "type");
-
-            if (typeItem == nullptr || !cJSON_IsNumber(typeItem)) {
-                return;
-            }
-
-            const auto type     = typeItem->valueint;
-            const auto dataItem = cJSON_GetObjectItem(root.get(), "data");
-            const auto iter     = services_.find(type);
-
-            if (iter != services_.end() && iter->second) {
-                iter->second->run(type, dataItem, transport_);
-            }
-        });
-
         transport_.onError([](const char* msg) {
             Serial.print("BTP Error: ");
             Serial.println(msg);
         });
 
+        scheduler_.onDataReceived([this](uint8_t* data, size_t size) {
+            if (size < 3) {
+                Serial.println("BTP: Received data too short.");
+                return;
+            }
+
+            const auto type = data[0];
+
+            if (const auto iter = services_.find(type); iter != services_.end() && iter->second) {
+                iter->second->run(type, std::span{data + 1, size - 1}, transport_);
+            }
+        });
+
         scheduler_.start(deviceName_.c_str());
     }
 
-    void stop() {
-        scheduler_.stop();
-    }
+    void stop() {}
 
 private:
     String deviceName_;
     Btp::BtpTransport transport_;
     Btp::BtpTransportScheduler scheduler_;
-    std::unordered_map<int32_t, BleService*> services_;
+    std::unordered_map<uint8_t, BleService*> services_;
 };
 
 BleServer::BleServer(const String& deviceName, const String& serviceUuid, const String& rxUuid, const String& txUuid)

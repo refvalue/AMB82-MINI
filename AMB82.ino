@@ -27,7 +27,6 @@ extern BleService& systemInfoService;
 extern BleService& currentScheduleService;
 extern BleService& updateTimeService;
 extern BleService& updateScheduleService;
-extern BleService& configureWiFiHotspotService;
 
 extern HttpService& fallbackService;
 extern HttpService& videoStreamingService;
@@ -76,7 +75,7 @@ namespace {
     void loadConfig() {
         SDFs.begin();
         globalAppMutex = xSemaphoreCreateMutex();
-        globalAppConfig.update(AppConfig::fromFile(appConfigFileName));
+        globalAppConfig.update(AppConfig::fromFlash());
         globalAppConfig.current()->first.dump();
     }
 
@@ -85,7 +84,7 @@ namespace {
         auto&& [config, updated] = *cache;
 
         if (updated) {
-            config.save(appConfigFileName);
+            config.saveToFlash();
         }
 
         appConfigCache = std::move(cache);
@@ -154,9 +153,8 @@ void setup() {
     bleServer.addService(RequestType::getRecordingSchedule, &currentScheduleService);
     bleServer.addService(RequestType::setSystemTime, &updateTimeService);
     bleServer.addService(RequestType::setRecordingSchedule, &updateScheduleService);
-    bleServer.addService(RequestType::configureWiFiHotspot, &configureWiFiHotspotService);
     bleServer.start();
-    
+
     // Starts feeding multimedia data.
     Camera.channelBegin(videoChannel);
 }
@@ -175,7 +173,7 @@ void loop() {
 
     updateDateTime();
     updateConfigCache();
-    //updateWiFiHotspot();
+    // updateWiFiHotspot();
     driveRecording();
 
     if (appConfigCache->second) {

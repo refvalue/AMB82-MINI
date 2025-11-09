@@ -1,12 +1,10 @@
 #include "AppConfig.hpp"
 #include "BleService.hpp"
-#include "MessageUtil.hpp"
 #include "Resources.hpp"
-#include "cJSON.hpp"
 
 #include <cstdint>
+#include <span>
 #include <utility>
-#include <vector>
 
 #if 1
 #include <FreeRTOS.h>
@@ -15,39 +13,17 @@
 #include <semphr.h>
 
 namespace {
-    struct UpdateScheduleService : BleService {
-        void run(int32_t type, cJSON* message, Btp::BtpTransport& transport) override {
-            if (cJSON_IsNull(message) || cJSON_IsInvalid(message)) {
-                return MessageUtil::sendResponseBody(transport, "failure", -1, "Invalid request body.");
-            }
+    class UpdateScheduleService : public BleService {
+    public:
+        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
+            auto tmp = AppConfig::fromBuffer(data);
 
-            if (const auto schedule = cJSON_GetObjectItem(message, "schedule"); schedule && cJSON_IsArray(schedule)) {
-                std::vector<AppConfig::RecordingPlan> scheduleList;
-                cJSON* startTimestamp{};
-                cJSON* duration{};
+            xSemaphoreTake(globalAppMutex, portMAX_DELAY);
+            auto config = globalAppConfig.current()->first;
+            xSemaphoreGive(globalAppMutex);
 
-                for (auto item = schedule->child; item; item = item->next) {
-                    if (!cJSON_IsObject(item)
-                        || (startTimestamp = cJSON_GetObjectItem(item, "startTimestamp")) == nullptr
-                        || (duration = cJSON_GetObjectItem(item, "duration")) == nullptr
-                        || !cJSON_IsNumber(startTimestamp) || !cJSON_IsNumber(duration)) {
-                        return MessageUtil::sendResponseBody(transport, false, -2, "Invalid schedule item.");
-                    }
-
-                    scheduleList.emplace_back(static_cast<int64_t>(cJSON_GetNumberValue(startTimestamp)),
-                        static_cast<uint32_t>(cJSON_GetNumberValue(duration)));
-                }
-
-                xSemaphoreTake(globalAppMutex, portMAX_DELAY);
-                auto config               = globalAppConfig.current()->first;
-                config.recording.schedule = std::move(scheduleList);
-                globalAppConfig.update(std::move(config));
-                xSemaphoreGive(globalAppMutex);
-
-                return MessageUtil::sendResponseBody(transport, true, 0, "Recording schedule successfully updated.");
-            }
-
-            MessageUtil::sendResponseBody(transport, false, -3, "Missing array parameter: `schedule`.");
+            config.recording.schedule = std::move(tmp.recording.schedule);
+            globalAppConfig.update(std::move(config));
         }
     };
 } // namespace

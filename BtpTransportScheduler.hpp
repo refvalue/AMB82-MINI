@@ -1,13 +1,12 @@
 #pragma once
 
+#include "BtpTransport.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 
 namespace Btp {
-    class BtpTransport;
-
     class BtpTransportScheduler {
     public:
         explicit BtpTransportScheduler(BtpTransport& transport);
@@ -16,8 +15,8 @@ namespace Btp {
         BtpTransportScheduler& operator=(BtpTransportScheduler&&) noexcept;
 
         bool start(const char* deviceName) const;
-        void stop() const;
-        bool send(const uint8_t* data, size_t size) const;
+        void send(const uint8_t* data, size_t size) const;
+        void onDataReceived(BtpTransport::DataHandler handler) const;
 
     private:
         class impl;

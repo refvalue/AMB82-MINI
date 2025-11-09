@@ -1,12 +1,14 @@
 #pragma once
 
 #include "TrackedValue.hpp"
-#include "cJSON.hpp"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include <WString.h>
+
+class TlvWriter;
 
 struct AppConfig {
     struct HotspotConfig {
@@ -29,13 +31,13 @@ struct AppConfig {
     HotspotConfig hotspot;
     RecordingConfig recording;
 
-    void save(const String& path);
+    void saveToFlash();
+    void writeTlv(TlvWriter& writer) const;
     void dump();
-    cJSONPtr getHotspotJson();
-    cJSONPtr getScheduleJson();
 
     static AppConfig createDefault();
-    static AppConfig fromFile(const String& path);
+    static AppConfig fromFlash();
+    static AppConfig fromBuffer(std::span<const uint8_t> buffer);
 };
 
 extern TrackedValue<AppConfig> globalAppConfig;

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 
 namespace Btp {
     class BtpTransport {
@@ -16,8 +17,8 @@ namespace Btp {
         BtpTransport& operator=(BtpTransport&&) noexcept;
 
         bool begin(const char* deviceName) const;
-        void poll() const;
         bool send(const uint8_t* data, size_t size) const;
+        bool send(std::span<const uint8_t> data) const;
 
         void onDataReceived(DataHandler handler) const;
         void onError(ErrorHandler handler) const;

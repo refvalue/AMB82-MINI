@@ -21,7 +21,7 @@ public:
     template <typename Enum>
         requires std::is_enum_v<Enum>
     void addService(Enum type, BleService* service) const {
-        addService(static_cast<int32_t>(type), service);
+        addService(static_cast<uint8_t>(type), service);
     }
 
     void start() const;
