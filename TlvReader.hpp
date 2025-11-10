@@ -27,8 +27,8 @@ public:
     TlvReader& operator=(const TlvReader&) = delete;
     TlvReader& operator=(TlvReader&&) noexcept;
 
-    void addType(uint8_t type, DataHandlerVariant handler);
-    void readAll() const;
+    void registerHandler(uint8_t type, DataHandlerVariant handler);
+    bool readAll() const;
 
 private:
     ReadHandler readHandler_;

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 
 namespace Btp {
     class BtpTransportScheduler {
@@ -16,6 +17,7 @@ namespace Btp {
 
         bool start(const char* deviceName) const;
         void send(const uint8_t* data, size_t size) const;
+        void send(std::span<const uint8_t> data) const;
         void onDataReceived(BtpTransport::DataHandler handler) const;
 
     private:

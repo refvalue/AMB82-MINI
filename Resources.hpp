@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 
 class AmebaFatFS;
 struct QueueDefinition;
@@ -18,3 +20,5 @@ extern AmebaFatFS& SDFs;
 extern QueueDefinition* globalAppMutex;
 extern std::atomic_int32_t globalNowSince2020;
 extern std::atomic_int32_t globalPendingTimestampSince2020;
+
+inline static constexpr size_t flashMemoryMappedSize = 0x1000;

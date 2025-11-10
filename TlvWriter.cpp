@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -14,17 +15,22 @@ namespace {
         }
     }
 
-    void writeRaw(std::vector<uint8_t>& buffer, uint8_t type, std::span<const uint8_t> value) {
+    void writeRaw(std::vector<uint8_t>& buffer, uint8_t type, std::span<const uint8_t> value,
+        std::optional<uint8_t> endingByte = {}) {
         writeMagicIfNeeded(buffer);
         buffer.emplace_back(type);
-        buffer.emplace_back(static_cast<uint8_t>(value.size()));
+        buffer.emplace_back(static_cast<uint8_t>(value.size() + (endingByte ? 1 : 0)));
         buffer.insert(buffer.end(), value.begin(), value.end());
+
+        if (endingByte) {
+            buffer.emplace_back(*endingByte);
+        }
     }
 
     template <typename T>
         requires std::is_arithmetic_v<T>
     void writePritimive(
-        std::vector<uint8_t>& buffer, uint8_t type, T value, void (*writeHandler)(std::span<uint8_t, sizeof(T)>, T)) {
+        std::vector<uint8_t>& buffer, uint8_t type, T value, void (*writeHandler)(std::span<uint8_t>, T)) {
         std::array<uint8_t, sizeof(T)> intermediate{};
 
         writeHandler(intermediate, value);
@@ -85,7 +91,7 @@ void TlvWriter::write(uint8_t type, uint64_t value) {
 }
 
 void TlvWriter::write(uint8_t type, const String& value, size_t maxSize) {
-    const auto size = std::min(value.length(), maxSize) + 1;
+    const auto size = std::min(value.length(), maxSize);
 
-    write(type, std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(value.c_str()), size});
+    writeRaw(buffer_, type, std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(value.c_str()), size}, '\0');
 }

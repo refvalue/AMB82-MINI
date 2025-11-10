@@ -10,19 +10,23 @@
 namespace {
     class UpdateTimeService : public BleService {
     public:
-        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
+        void run(uint8_t type, std::span<const uint8_t> data, SendHandler sendHandler) override {
             TlvReader reader{data};
 
-            reader.addType(1, TlvReader::DataHandler<uint64_t>{
-                                  [&](uint8_t type, uint64_t value) {
-                                      const auto timestamp = static_cast<int64_t>(value);
+            reader.registerHandler(1, TlvReader::DataHandler<uint64_t>{
+                                          [&](uint8_t type, uint64_t value) {
+                                              const auto timestamp = static_cast<int64_t>(value);
 
-                                      globalPendingTimestampSince2020.store(
-                                          TimeUtil::toTimestampSince2020(timestamp), std::memory_order_release);
-                                  },
-                              });
+                                              globalPendingTimestampSince2020.store(
+                                                  TimeUtil::toTimestampSince2020(timestamp), std::memory_order_release);
+                                          },
+                                      });
 
-            reader.readAll();
+            if (reader.readAll()) {
+                return sendHandler(std::array<uint8_t, 2>{'O', 'K'});
+            }
+
+            sendHandler(std::array<uint8_t, 4>{'F', 'A', 'I', 'L'});
         }
     };
 } // namespace

@@ -19,6 +19,7 @@
 
 #include <AmebaFatFS.h>
 #include <BLEDevice.h>
+#include <FlashMemory.h>
 #include <VideoStream.h>
 #include <VideoStreamOverlay.h>
 #include <Wire.h>
@@ -74,6 +75,8 @@ namespace {
 
     void loadConfig() {
         SDFs.begin();
+        FlashMemory.begin(FLASH_MEMORY_APP_BASE, flashMemoryMappedSize);
+
         globalAppMutex = xSemaphoreCreateMutex();
         globalAppConfig.update(AppConfig::fromFlash());
         globalAppConfig.current()->first.dump();
@@ -85,6 +88,7 @@ namespace {
 
         if (updated) {
             config.saveToFlash();
+            config.dump();
         }
 
         appConfigCache = std::move(cache);

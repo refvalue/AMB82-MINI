@@ -43,6 +43,10 @@ namespace Btp {
             enqueueData(data, size, [this](const uint8_t* data, size_t size) { transport_.send(data, size); });
         }
 
+        void send(std::span<const uint8_t> data) {
+            send(data.data(), data.size());
+        }
+
         void onDataReceived(BtpTransport::DataHandler handler) {
             transport_.onDataReceived(
                 [this, handler = std::move(handler)](uint8_t* data, size_t size) { enqueueData(data, size, handler); });
@@ -77,6 +81,10 @@ namespace Btp {
 
     void BtpTransportScheduler::send(const uint8_t* data, size_t size) const {
         impl_->send(data, size);
+    }
+
+    void BtpTransportScheduler::send(std::span<const uint8_t> data) const {
+        impl_->send(data);
     }
 
     void BtpTransportScheduler::onDataReceived(BtpTransport::DataHandler handler) const {

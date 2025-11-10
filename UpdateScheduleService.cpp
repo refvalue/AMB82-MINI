@@ -10,12 +10,20 @@
 #include <FreeRTOS.h>
 #endif
 
+#include <LOGUARTClass.h>
 #include <semphr.h>
 
 namespace {
     class UpdateScheduleService : public BleService {
     public:
-        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
+        void run(uint8_t type, std::span<const uint8_t> data, SendHandler sendHandler) override {
+            for (size_t i = 0; i < data.size(); i++) {
+                Serial.print(data[i]);
+                Serial.print("=");
+            }
+
+            Serial.println();
+
             auto tmp = AppConfig::fromBuffer(data);
 
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
@@ -24,6 +32,8 @@ namespace {
 
             config.recording.schedule = std::move(tmp.recording.schedule);
             globalAppConfig.update(std::move(config));
+
+            sendHandler(std::array<uint8_t, 2>{'O', 'K'});
         }
     };
 } // namespace

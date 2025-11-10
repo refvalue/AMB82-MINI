@@ -17,7 +17,7 @@ namespace {
     template <class... Ts>
     overloaded(Ts...) -> overloaded<Ts...>;
 
-    constexpr uint8_t readU8(std::span<const uint8_t, 1> buffer) noexcept {
+    constexpr uint8_t readU8(std::span<const uint8_t> buffer) noexcept {
         return buffer[0];
     }
 
@@ -50,18 +50,16 @@ namespace {
         return std::ranges::equal(buffer, TlvConstants::magic);
     }
 
-    void dispatchValueTypes(
-        uint8_t type, std::span<const uint8_t> rawValue, const TlvReader::DataHandlerVariant& variant) {
-
+    void dispatchValue(uint8_t type, std::span<const uint8_t> rawValue, const TlvReader::DataHandlerVariant& variant) {
         if (rawValue.empty()) {
             return;
         }
 
-        auto createHandler = [&]<typename T>(
-                                 std::type_identity<T>, T (*readHandler)(std::span<const uint8_t, sizeof(T)>)) {
+        auto createHandler = [&]<typename T, typename ReadBigHandler>(
+                                 std::type_identity<T>, ReadBigHandler&& readHandler) {
             return [&](const TlvReader::DataHandler<T>& handler) {
                 if (rawValue.size() == sizeof(T)) {
-                    auto value = readHandler(std::span<const uint8_t, sizeof(T)>{rawValue.data(), sizeof(T)});
+                    auto value = std::forward<ReadBigHandler>(readHandler)(rawValue);
 
                     handler(type, std::move(value));
                 }
@@ -102,11 +100,11 @@ TlvReader& TlvReader::operator=(TlvReader&& other) noexcept {
     return *this;
 }
 
-void TlvReader::addType(uint8_t type, DataHandlerVariant handler) {
+void TlvReader::registerHandler(uint8_t type, DataHandlerVariant handler) {
     typeMapping_.insert_or_assign(type, std::move(handler));
 }
 
-void TlvReader::readAll() const {
+bool TlvReader::readAll() const {
     static constexpr size_t bufferSize = 1024;
 
     std::array<uint8_t, bufferSize> buffer{};
@@ -114,7 +112,7 @@ void TlvReader::readAll() const {
     size_t offset{};
 
     if (!checkMagic(readHandler_)) {
-        return;
+        return false;
     }
 
     while ((bytesRead = readHandler_(buffer.data() + offset, bufferSize - offset)) != 0) {
@@ -134,7 +132,7 @@ void TlvReader::readAll() const {
                 auto&& variant   = iter->second;
                 const auto value = buffer.data() + parseOffset + TlvConstants::typeLengthSize;
 
-                dispatchValueTypes(type, std::span<const uint8_t>{value, length}, variant);
+                dispatchValue(type, std::span<const uint8_t>{value, length}, variant);
             }
 
             parseOffset += TlvConstants::typeLengthSize + length;
@@ -147,4 +145,6 @@ void TlvReader::readAll() const {
             offset = 0;
         }
     }
+
+    return true;
 }

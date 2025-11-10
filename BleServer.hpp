@@ -16,7 +16,7 @@ public:
     BleServer(BleServer&&) noexcept;
     ~BleServer();
     BleServer& operator=(BleServer&&) noexcept;
-    void addService(int32_t type, BleService* service) const;
+    void addService(uint8_t type, BleService* service) const;
 
     template <typename Enum>
         requires std::is_enum_v<Enum>

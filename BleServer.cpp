@@ -14,7 +14,7 @@ public:
         : deviceName_{deviceName}, transport_{serviceUuid.c_str(), rxUuid.c_str(), txUuid.c_str()},
           scheduler_{transport_} {}
 
-    void addService(int32_t type, BleService* service) {
+    void addService(uint8_t type, BleService* service) {
         services_.emplace(type, service);
     }
 
@@ -25,15 +25,19 @@ public:
         });
 
         scheduler_.onDataReceived([this](uint8_t* data, size_t size) {
-            if (size < 3) {
-                Serial.println("BTP: Received data too short.");
+            if (size < 1) {
+                Serial.println("BTPScheduler: Received data too short.");
                 return;
             }
 
             const auto type = data[0];
 
+            Serial.print("BTPScheduler: type `");
+            Serial.print(type);
+            Serial.println("` received, now start parsing.");
+
             if (const auto iter = services_.find(type); iter != services_.end() && iter->second) {
-                iter->second->run(type, std::span{data + 1, size - 1}, transport_);
+                iter->second->run(type, std::span{data + 1, size - 1}, [this](auto data) { scheduler_.send(data); });
             }
         });
 
@@ -58,7 +62,7 @@ BleServer::~BleServer() = default;
 
 BleServer& BleServer::operator=(BleServer&&) noexcept = default;
 
-void BleServer::addService(int32_t type, BleService* service) const {
+void BleServer::addService(uint8_t type, BleService* service) const {
     impl_->addService(type, service);
 }
 

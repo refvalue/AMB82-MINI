@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <memory>
 #include <vector>
 
 #if 1
@@ -19,6 +16,13 @@ public:
         : freeCount_{capacity}, pool_(capacity), freeIndices_(capacity), mutex_{xSemaphoreCreateMutex()} {
         for (size_t i = 0; i < capacity; i++) {
             freeIndices_[i] = i;
+        }
+    }
+
+    ~ObjectPool() {
+        if (mutex_) {
+            vSemaphoreDelete(mutex_);
+            mutex_ = nullptr;
         }
     }
 

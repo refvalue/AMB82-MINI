@@ -15,13 +15,14 @@
 namespace {
     class CurrentScheduleService : public BleService {
     public:
-        void run(uint8_t type, std::span<const uint8_t> data, Btp::BtpTransport& transport) override {
+        void run(uint8_t type, std::span<const uint8_t> data, SendHandler sendHandler) override {
             xSemaphoreTake(globalAppMutex, portMAX_DELAY);
             const auto config = globalAppConfig.current()->first;
             xSemaphoreGive(globalAppMutex);
 
             writer_.clear();
             config.writeTlv(writer_);
+            sendHandler(writer_.data());
         }
 
     private:

@@ -6,10 +6,11 @@
 #include <FreeRTOS.h>
 #endif
 
+#include <LOGUARTClass.h>
 #include <queue.h>
 
 MessageQueue::MessageQueue(size_t capacity)
-    : pool_{capacity}, queue_{xQueueCreate(capacity, sizeof(Handler))},
+    : pool_{capacity}, queue_{xQueueCreate(capacity, sizeof(Handler*))},
       task_{std::bind_front(&MessageQueue::taskRoutine, this)} {}
 
 MessageQueue::~MessageQueue() {
@@ -25,22 +26,21 @@ MessageQueue::~MessageQueue() {
 void MessageQueue::beginInvoke(Handler handler) {
     if (const auto item = pool_.acquire()) {
         *item = std::move(handler);
-        xQueueSend(queue_, item, 0);
+        xQueueSend(queue_, &item, portMAX_DELAY);
     }
 }
 
 void MessageQueue::beginInvokeFromIsr(Handler handler) {
     if (const auto item = pool_.acquire()) {
         *item = std::move(handler);
-        xQueueSendFromISR(queue_, item, 0);
+        xQueueSendFromISR(queue_, &item, nullptr);
     }
 }
 
 void MessageQueue::taskRoutine(ManagedTask::CheckStoppedHandler checkStopped) {
-    Handler* handler;
-
     while (!checkStopped()) {
-        if (xQueueReceive(queue_, &handler, portMAX_DELAY) == pdTRUE && handler) {
+        if (Handler* handler{}; xQueueReceive(queue_, &handler, portMAX_DELAY) == pdTRUE && handler) {
+
             if (*handler) {
                 (*handler)();
             }
