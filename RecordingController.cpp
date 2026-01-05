@@ -16,12 +16,13 @@
 #include <portmacro.h>
 
 namespace {
-    constexpr int32_t skippingThresholdSec = 60;
-}
+    constexpr int32_t skippingThresholdSec    = 60;
+    constexpr uint32_t delayMsBeforeDeepSleep = 15 * 60 * 1000;
+} // namespace
 
 class RecordingController::impl {
 public:
-    impl(DS3231& rtc, MixingStreamer& streamer) : rtc_{rtc}, streamer_{streamer} {}
+    impl(DS3231& rtc, MixingStreamer& streamer) : rtc_{rtc}, initTime_{millis()}, streamer_{streamer} {}
 
     void update(const AppConfig::RecordingConfig& config) {
         stateMachine_.update(config.schedule);
@@ -51,6 +52,9 @@ public:
         if (streamer_.stopRecording(now)) {
             Serial.print("Stop recording: ");
             Serial.println(TimeUtil::toIso8601(rtc_.getDateTime()));
+        }
+
+        if (millis() - initTime_ > delayMsBeforeDeepSleep) {
             scheduleNextWakeup(now);
         }
     }
@@ -95,6 +99,7 @@ private:
     }
 
     DS3231& rtc_;
+    uint32_t initTime_;
     MixingStreamer& streamer_;
     RecordingStateMachine stateMachine_;
 };
